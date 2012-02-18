@@ -475,6 +475,15 @@ static struct omap_hwmod_ocp_if omap3xxx_l4_core__mmc3 = {
 	.flags		= OMAP_FIREWALL_L4
 };
 
+
+static struct omap_hwmod_irq_info omap3_smartreflex_mpu_irqs[] = {
+	{.name = "sr1_irq", .irq = 18},
+};
+
+static struct omap_hwmod_irq_info omap3_smartreflex_core_irqs[] = {
+	{.name = "sr2_irq", .irq = 19},
+};
+
 /* L4 CORE -> SR1 interface */
 static struct omap_hwmod_addr_space omap3_sr1_addr_space[] = {
 	{
@@ -570,11 +579,12 @@ static struct omap_hwmod_class_sysconfig omap3xxx_timer_sysc = {
 	.rev_offs	= 0x0000,
 	.sysc_offs	= 0x0010,
 	.syss_offs	= 0x0014,
-	.sysc_flags	= (SYSC_HAS_SIDLEMODE | SYSC_HAS_ENAWAKEUP |
-			   SYSC_HAS_SOFTRESET | SYSC_HAS_AUTOIDLE |
-			   SYSS_HAS_RESET_STATUS),
+	.sysc_flags	= (SYSC_HAS_SIDLEMODE | SYSC_HAS_CLOCKACTIVITY |
+				SYSC_HAS_ENAWAKEUP | SYSC_HAS_SOFTRESET |
+				SYSC_HAS_EMUFREE | SYSC_HAS_AUTOIDLE |
+				SYSS_HAS_RESET_STATUS),
 	.idlemodes	= (SIDLE_FORCE | SIDLE_NO | SIDLE_SMART),
-	.sysc_fields	= &omap_hwmod_sysc_type2,
+	.sysc_fields	= &omap_hwmod_sysc_type1,
 };
 
 static struct omap_hwmod_class omap3xxx_timer_hwmod_class = {
@@ -626,10 +636,10 @@ static struct omap_hwmod omap3xxx_timer10_hwmod = {
 	.prcm		= {
 		.omap2 = {
 			.prcm_reg_id = 1,
-			.module_bit = OMAP24XX_EN_GPT10_SHIFT,
+			.module_bit = OMAP3430_EN_GPT10_SHIFT,
 			.module_offs = CORE_MOD,
 			.idlest_reg_id = 1,
-			.idlest_idle_bit = OMAP24XX_EN_GPT10_SHIFT,
+			.idlest_idle_bit = OMAP3430_EN_GPT10_SHIFT,
 		},
 	},
 	.masters	= omap3xxx_timer10_masters,
@@ -683,10 +693,10 @@ static struct omap_hwmod omap3xxx_timer11_hwmod = {
 	.prcm		= {
 		.omap2 = {
 			.prcm_reg_id = 1,
-			.module_bit = OMAP24XX_EN_GPT11_SHIFT,
+			.module_bit = OMAP3430_EN_GPT11_SHIFT,
 			.module_offs = CORE_MOD,
 			.idlest_reg_id = 1,
-			.idlest_idle_bit = OMAP24XX_EN_GPT11_SHIFT,
+			.idlest_idle_bit = OMAP3430_EN_GPT11_SHIFT,
 		},
 	},
 	.masters	= omap3xxx_timer11_masters,
@@ -696,6 +706,65 @@ static struct omap_hwmod omap3xxx_timer11_hwmod = {
 	.class		= &omap3xxx_timer_hwmod_class,
 	.omap_chip	= OMAP_CHIP_INIT(CHIP_IS_OMAP3430)
 };
+
+/* timer12 */
+static struct omap_hwmod omap3xxx_timer12_hwmod;
+static struct omap_hwmod_irq_info omap3xxx_timer12_mpu_irqs[] = {
+	{ .irq = INT_24XX_GPTIMER12, },
+};
+
+static struct omap_hwmod_addr_space omap3xxx_timer12_addrs[] = {
+	{
+		.pa_start	= 0x48304000,
+		.pa_end		= 0x48304000 + SZ_1K - 1,
+		.flags		= ADDR_TYPE_RT
+	},
+};
+
+/* l4_core -> timer12 */
+static struct omap_hwmod_ocp_if omap3xxx_l4_core__timer12 = {
+	.master		= &omap3xxx_l4_core_hwmod,
+	.slave		= &omap3xxx_timer12_hwmod,
+	.clk		= "gpt12_ick",
+	.addr		= omap3xxx_timer12_addrs,
+	.addr_cnt	= ARRAY_SIZE(omap3xxx_timer12_addrs),
+	.user		= OCP_USER_MPU | OCP_USER_SDMA,
+};
+
+/* timer12 master port */
+static struct omap_hwmod_ocp_if *omap3xxx_timer12_masters[] = {
+	&omap3xxx_l4_core__timer12,
+};
+
+/* timer12 slave port */
+static struct omap_hwmod_ocp_if *omap3xxx_timer12_slaves[] = {
+	&omap3xxx_l4_core__timer12,
+};
+
+/* timer12 hwmod */
+static struct omap_hwmod omap3xxx_timer12_hwmod = {
+	.name		= "timer12",
+	.mpu_irqs	= omap3xxx_timer12_mpu_irqs,
+	.mpu_irqs_cnt	= ARRAY_SIZE(omap3xxx_timer12_mpu_irqs),
+	.main_clk	= "gpt12_fck",
+	.prcm		= {
+		.omap2 = {
+			.prcm_reg_id = 1,
+			.module_bit = OMAP24XX_EN_GPT12_SHIFT,
+			.module_offs = CORE_MOD,
+			.idlest_reg_id = 1,
+			.idlest_idle_bit = OMAP24XX_EN_GPT12_SHIFT,
+		},
+	},
+	.masters	= omap3xxx_timer12_masters,
+	.masters_cnt	= ARRAY_SIZE(omap3xxx_timer12_masters),
+	.slaves		= omap3xxx_timer12_slaves,
+	.slaves_cnt	= ARRAY_SIZE(omap3xxx_timer12_slaves),
+	.class		= &omap3xxx_timer_hwmod_class,
+	.omap_chip	= OMAP_CHIP_INIT(CHIP_IS_OMAP3430)
+};
+
+
 
 /* L4 CORE */
 static struct omap_hwmod omap3xxx_l4_core_hwmod = {
@@ -1344,7 +1413,9 @@ static struct omap_hwmod omap3xxx_ispmmu_hwmod = {
 	.flags		= (HWMOD_NO_IDLEST | HWMOD_INIT_NO_RESET),
 	.slaves		= omap3xxx_ispmmu_slaves,
 	.slaves_cnt	= ARRAY_SIZE(omap3xxx_ispmmu_slaves),
-	.omap_chip	= OMAP_CHIP_INIT(CHIP_IS_OMAP3630ES1_2)
+	.omap_chip	= OMAP_CHIP_INIT(CHIP_IS_OMAP3630ES1|
+					CHIP_IS_OMAP3630ES1_1|
+					CHIP_IS_OMAP3630ES1_2),
 };
 
 /*
@@ -1884,8 +1955,18 @@ static struct omap_hwmod omap3xxx_gpio6_hwmod = {
  * 2d/3d graphics accelerator
  */
 
+static struct omap_hwmod_class_sysconfig omap3xxx_gpu_sysc = {
+	.rev_offs	= 0xfe00,
+	.sysc_offs	= 0xfe10,
+	.sysc_flags	= (SYSC_HAS_MIDLEMODE | SYSC_HAS_SIDLEMODE),
+	.idlemodes	= (SIDLE_FORCE | SIDLE_NO | SIDLE_SMART |
+			   MSTANDBY_FORCE | MSTANDBY_NO | MSTANDBY_SMART),
+	.sysc_fields	= &omap_hwmod_sysc_type2,
+};
+
 static struct omap_hwmod_class omap3xxx_gpu_hwmod_class = {
 	.name = "gpu",
+	.sysc = &omap3xxx_gpu_sysc,
 };
 
 /* gpu */
@@ -1901,7 +1982,7 @@ static struct omap_hwmod_ocp_if *omap3xxx_gpu_masters[] = {
 static struct omap_hwmod_addr_space omap3xxx_gpu_addrs[] = {
 	{
 		.pa_start       = 0x50000000,
-		.pa_end         = 0x50003fff,
+		.pa_end         = 0x5000ffff,
 		.flags          = ADDR_TYPE_RT
 	},
 };
@@ -1910,7 +1991,7 @@ static struct omap_hwmod_addr_space omap3xxx_gpu_addrs[] = {
 static struct omap_hwmod_ocp_if omap3xxx_l3_main__gpu = {
 	.master         = &omap3xxx_l3_main_hwmod,
 	.slave          = &omap3xxx_gpu_hwmod,
-	.clk		= "core_l3_ick",
+	.clk		= "sgx_ick",
 	.addr           = omap3xxx_gpu_addrs,
 	.addr_cnt       = ARRAY_SIZE(omap3xxx_gpu_addrs),
 	.user           = OCP_USER_MPU | OCP_USER_SDMA,
@@ -1926,7 +2007,8 @@ static struct omap_hwmod omap3xxx_gpu_hwmod = {
 	.class          = &omap3xxx_gpu_hwmod_class,
 	.mpu_irqs       = omap3xxx_gpu_irqs,
 	.mpu_irqs_cnt   = ARRAY_SIZE(omap3xxx_gpu_irqs),
-	.flags		= HWMOD_NO_IDLEST,
+	.flags		= HWMOD_NO_IDLEST | HWMOD_NO_OCP_AUTOIDLE,
+	.main_clk	= "sgx_fck",
 	.vdd_name       = "core",
 	.slaves         = omap3xxx_gpu_slaves,
 	.slaves_cnt     = ARRAY_SIZE(omap3xxx_gpu_slaves),
@@ -2115,8 +2197,7 @@ static struct omap_hwmod_class_sysconfig omap3xxx_usbhsotg_sysc = {
 	.sysc_offs	= 0x0404,
 	.syss_offs	= 0x0408,
 	.sysc_flags	= (SYSC_HAS_SIDLEMODE | SYSC_HAS_MIDLEMODE|
-			  SYSC_HAS_ENAWAKEUP | SYSC_HAS_SOFTRESET |
-			  SYSC_HAS_AUTOIDLE | SYSS_HAS_RESET_STATUS),
+			             SYSC_HAS_ENAWAKEUP | SYSC_HAS_AUTOIDLE),
 	.idlemodes	= SIDLE_FORCE | SIDLE_NO | SIDLE_SMART,
 	.sysc_fields	= &omap_hwmod_sysc_type1,
 };
@@ -2638,6 +2719,8 @@ static struct omap_hwmod omap34xx_sr1_hwmod = {
 					CHIP_IS_OMAP3430ES3_0 |
 					CHIP_IS_OMAP3430ES3_1),
 	.flags		= HWMOD_SET_DEFAULT_CLOCKACT,
+	.mpu_irqs	= omap3_smartreflex_mpu_irqs,
+	.mpu_irqs_cnt	= ARRAY_SIZE(omap3_smartreflex_mpu_irqs),
 };
 
 static u32 omap36xx_sr1_efuse_offs[] = {
@@ -2673,8 +2756,11 @@ static struct omap_hwmod omap36xx_sr1_hwmod = {
 	.slaves		= omap3_sr1_slaves,
 	.slaves_cnt	= ARRAY_SIZE(omap3_sr1_slaves),
 	.dev_attr	= &omap36xx_sr1_dev_attr,
-	.omap_chip	= OMAP_CHIP_INIT(CHIP_IS_OMAP3630ES1 |
-					 CHIP_IS_OMAP3630ES1_1),
+	.omap_chip      = OMAP_CHIP_INIT(CHIP_IS_OMAP3630ES1|
+					CHIP_IS_OMAP3630ES1_1|
+					CHIP_IS_OMAP3630ES1_2),
+	.mpu_irqs	= omap3_smartreflex_mpu_irqs,
+	.mpu_irqs_cnt	= ARRAY_SIZE(omap3_smartreflex_mpu_irqs),
 };
 
 /* SR2 */
@@ -2721,6 +2807,8 @@ static struct omap_hwmod omap34xx_sr2_hwmod = {
 	.omap_chip	= OMAP_CHIP_INIT(CHIP_IS_OMAP3430ES2 |
 					CHIP_IS_OMAP3430ES3_0 |
 					CHIP_IS_OMAP3430ES3_1),
+	.mpu_irqs	= omap3_smartreflex_core_irqs,
+	.mpu_irqs_cnt	= ARRAY_SIZE(omap3_smartreflex_core_irqs),
 	.flags		= HWMOD_SET_DEFAULT_CLOCKACT,
 };
 
@@ -2756,8 +2844,11 @@ static struct omap_hwmod omap36xx_sr2_hwmod = {
 	.slaves		= omap3_sr2_slaves,
 	.slaves_cnt	= ARRAY_SIZE(omap3_sr2_slaves),
 	.dev_attr	= &omap36xx_sr2_dev_attr,
-	.omap_chip	= OMAP_CHIP_INIT(CHIP_IS_OMAP3630ES1 |
-					 CHIP_IS_OMAP3630ES1_1),
+	.omap_chip      = OMAP_CHIP_INIT(CHIP_IS_OMAP3630ES1|
+					CHIP_IS_OMAP3630ES1_1|
+					CHIP_IS_OMAP3630ES1_2),
+	.mpu_irqs	= omap3_smartreflex_core_irqs,
+	.mpu_irqs_cnt	= ARRAY_SIZE(omap3_smartreflex_core_irqs),
 };
 
 /*
@@ -3181,7 +3272,8 @@ static struct omap_hwmod_class_sysconfig omap3xxx_dss_sysc = {
 	.rev_offs	= 0x0000,
 	.sysc_offs	= 0x0010,
 	.syss_offs	= 0x0014,
-	.sysc_flags	= (SYSC_HAS_SOFTRESET | SYSC_HAS_AUTOIDLE),
+	.sysc_flags	= (SYSC_HAS_SOFTRESET | SYSC_HAS_AUTOIDLE |
+				   SYSS_HAS_RESET_STATUS),
 	.sysc_fields	= &omap_hwmod_sysc_type1,
 };
 
@@ -3559,6 +3651,7 @@ static __initdata struct omap_hwmod *omap3xxx_hwmods[] = {
 	&omap3xxx_timer9_hwmod,
 	&omap3xxx_timer10_hwmod,
 	&omap3xxx_timer11_hwmod,
+	&omap3xxx_timer12_hwmod,
 	&omap34xx_sr1_hwmod,
 	&omap34xx_sr2_hwmod,
 	&omap36xx_sr1_hwmod,
