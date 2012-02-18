@@ -118,7 +118,7 @@ struct max17042_platform_data {
 	int val_DesignCap;
 	int val_Capacity;
 	int val_SOCREP;
-	
+
 	int (*init)(void);
 	void (*exit)(void);
 	int (*power_on)(void);
@@ -134,5 +134,3 @@ extern const u16 custom_0x90[];
 extern const u16 custom_0xA0[];
 
 #endif  /* __MAX17042_H__ */
-
-

@@ -23,11 +23,11 @@
 
 
 #include <linux/module.h>
-#include <linux/slab.h>
 #include <linux/param.h>
 #include <linux/jiffies.h>
 #include <linux/workqueue.h>
 #include <linux/delay.h>
+#include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <linux/power_supply.h>
 #include <linux/pm.h>
@@ -40,7 +40,7 @@
 #include <linux/interrupt.h>
 #include <linux/fs.h>
 #include <linux/max17042.h>
-#include <plat/board-encore.h>
+//#include <mach/board-boxer.h>
 #include <linux/ctype.h>
 
 #define NAME				"max17042"
@@ -48,6 +48,10 @@
 #define RESUME_ENTRIES			10
 #define MONITOR_PERIOD  		30*HZ		//put it 30s or update on significant change
 #define LOWER_THRESHOLD_VOL     	3000
+
+#define DUMP_FMT_NONE 0
+#define DUMP_FMT_SHORT 1
+#define DUMP_FMT_LONG 2
 
 // refresh history data whenever rsoc changes by this % : might be written to file less frequently
 #define SAVE_STORE_SOC_THRESHOLD	1
@@ -58,14 +62,7 @@
 #define HISTORY_MAGIC		0x1234
 
 /*leave the debug msg on until later release TBD*/
-//#define DEBUG(x...) 			printk(x)
-#define DEBUG(x...)
-
-static const enum dump_format {
-    DUMP_FMT_NONE,
-    DUMP_FMT_SHORT,
-    DUMP_FMT_LONG,
-};
+#define DEBUG(x...) 			printk(x)
 
 // DEBUG_NO_BATTERY is used for configs without a real battery (bench supply)
 // this produces no Alert signal on faults (like temperature/capacity)
@@ -127,7 +124,7 @@ struct max17042_data {
    unsigned long next_save; // jiffies at which history should next be written
 };
 
-static const enum power_supply_property max17042_battery_props[] = {
+static enum power_supply_property max17042_battery_props[] = {
    POWER_SUPPLY_PROP_STATUS,
    POWER_SUPPLY_PROP_HEALTH,    
    POWER_SUPPLY_PROP_PRESENT,
@@ -205,7 +202,7 @@ static int max17042_i2c_write(struct max17042_data *max17042, u8 addr, u8 *data,
 static int max17042_read(u8 addr, u16 *data, struct max17042_data *max17042)
 {
 	int err;
-	
+
 	err = max17042_i2c_read(max17042, addr, (u8*)data, 2);
 	*data = le16_to_cpu (*data);
    return err;
@@ -215,9 +212,9 @@ static int max17042_read(u8 addr, u16 *data, struct max17042_data *max17042)
 static int max17042_write(u8 addr, const u16 *data, struct max17042_data *max17042)
 {	
 	u16 buf;
-	
+
 	buf = cpu_to_le16 (*data);
-	
+
 	return max17042_i2c_write(max17042, addr, (u8*)&buf, 2);
 }
 
@@ -225,9 +222,9 @@ static int max17042_write(u8 addr, const u16 *data, struct max17042_data *max170
 static int max17042_read16(u8 addr, u16 *data, struct max17042_data *max17042)
 {
 	int i, err;
-	
+
 	err = max17042_i2c_read(max17042, addr, (u8*)data, 32);
-	
+
 	for ( i = 0; i < 16; i++ ) {
 		*data = le16_to_cpu (*data);
 		data++;
@@ -263,7 +260,7 @@ static int max17042_verify(struct max17042_data *max17042)
                 dev_err(&max17042->client->dev, "read err cycles \n");
 	//end of test code
 #endif
-	                
+
         //if (buf != 1)
         //        err = -1;
         return err;
@@ -288,7 +285,7 @@ static int max17042_get_status(struct max17042_data *max17042)
 static int max17042_set_config( struct max17042_data *max17042)
 {
 	int err; 
-			   
+
 	static const u16 config = (MAX17042_CONFIG_Ts | 
 #ifndef DEBUG_NO_BATTERY
                           MAX17042_CONFIG_Aen | 
@@ -304,20 +301,20 @@ static int max17042_set_config( struct max17042_data *max17042)
         }
 
 	// most config is already set by bootloader
-				   
+
         return 0;	//to verfy it with le16_to_cpu()	
 }
 
 static int max17042_set_thresholds( struct max17042_data *max17042)
 {
 	int err;
-	
+
 	/* voltage Valert max is disabled, min is 3.1V */
 	static const u16 Valert = 0xFF9B;  // 20 mV resolution
 
 	/* capacity Salert max is disabled, min is 5% */
 	static const u16 Salert = 0xFF05; //1% resolution
-			   
+
         err =max17042_write(MAX17042_ValertThreshold, &Valert, max17042);	
         DEBUG("Valert = 0x%04x\n", Valert);
         if ( err < 0 ) {
@@ -338,7 +335,7 @@ static int max17042_set_shdntimer( struct max17042_data *max17042)
 {
 	int err;
 	static const u16 shdntimer = 0<<14 | 0x02;	// 45s*2=90s
-		   
+
         err =max17042_write(MAX17042_SHDNTIMER, &shdntimer, max17042);	
         DEBUG("shdntimer = 0x%04x\n", shdntimer);
         if ( err < 0 )
@@ -375,21 +372,21 @@ static int max17042_enable_Ten ( struct max17042_data *max17042,
 		dev_err(&max17042->client->dev, "write err CONFIG \n");
 		return err;
 	}
-	
+
 return 0;
 }
 
 static int max17042_enable_Aen ( struct max17042_data *max17042)
 {	u16 config;
 	int err;
-	
+
         err =max17042_read(MAX17042_CONFIG, &config, max17042);	
         DEBUG("config = 0x%04x\n", config);
         if ( err < 0 ) {
         	dev_err(&max17042->client->dev, "read err CONFIG \n");
         	return err;
         }
-	        
+
         config |= MAX17042_CONFIG_Aen;	//enable Aen bit of CONFIG
 
         err =max17042_write(MAX17042_CONFIG, &config, max17042);	
@@ -398,7 +395,7 @@ static int max17042_enable_Aen ( struct max17042_data *max17042)
         	dev_err(&max17042->client->dev, "write err CONFIG \n");
         	return err;
         }
-		
+
 	return 0;	
 }
 
@@ -447,7 +444,7 @@ static int max17042_hw_init(struct max17042_data *max17042)
 	if ( err < 0 )
 		return err;
 #endif
-		
+
         err = max17042_set_shdntimer( max17042 );
         if (err < 0)
                 return err;
@@ -523,7 +520,6 @@ static void max17042_irq_work_func(struct work_struct *work)
         int err;
         u16 buf =0xFFFF;
 	//to prevent multiple interrupts on violation of temperature threshold
-	u16 temp; 	
 
         struct max17042_data *max17042
                         = container_of(work, struct max17042_data, irq_work);
@@ -536,10 +532,10 @@ static void max17042_irq_work_func(struct work_struct *work)
 		 return;
 	}
 	buf= max17042->status;		//save it
-	
+
 	//clear Br, Bi
 	buf &= ~(1<<15 | 1<<11);
-	
+
 	//clear the bits
 	if ( max17042->status & (1<<8) ) {
 		DEBUG("Min Vol threshold exceeded!\n");
@@ -571,7 +567,7 @@ static void max17042_irq_work_func(struct work_struct *work)
 		DEBUG("Max SOC threshold exceeded!\n");
 		buf &= ~(1<<14);		//Smx
 	}
-	
+
         err =max17042_write(MAX17042_STATUS, &buf, max17042);	
         DEBUG("status = 0x%04x\n", buf);
         if ( err < 0 )
@@ -677,7 +673,7 @@ static int max17042_battery_get_property(struct power_supply *psy,
       }
       break;
    case POWER_SUPPLY_PROP_TEMP:
-      val->intval = max17042->temp_cached;
+      val->intval = (max17042->temp_cached/100000);
       //DEBUG(KERN_NOTICE "bq27x00_battery_get_property(), temp(%d)\n", val->intval);       
       break;
    case POWER_SUPPLY_PROP_TIME_TO_EMPTY_NOW:
@@ -722,7 +718,7 @@ static int max17042_battery_current(struct max17042_data* max17042)
         if ( err < 0 )
         	dev_err(&max17042->client->dev, "read err Current \n");
 	else {
-	
+
 		//in unit of uA, 
 		if ( curr & (1<<15) ) {
 			//negtive value
@@ -733,16 +729,15 @@ static int max17042_battery_current(struct max17042_data* max17042)
 			max17042->curr_cached = NON_COMPLEMENT_VAL(curr, CURR_RESOLUTION, 100);
 		}	
 	}
-	
+
 	return err;
 }
 
 //resolution 0.0039-degree, or 3900uC
 static int max17042_battery_temperature(struct max17042_data* max17042)
 {
-	int err;
+	int err = 0;
 	u16 temp = 0;
-
         err =max17042_read(MAX17042_Temperature, &temp, max17042);	
         //DEBUG("temp = 0x%04x\n", temp);
 
@@ -752,13 +747,13 @@ static int max17042_battery_temperature(struct max17042_data* max17042)
 		// in unit of micro-degree, 
 		if ( temp & (1<<15) ) {
 			//negtive value
-			max17042->temp_cached = COMPLEMENT_VAL(temp, TEMP_RESOLUTION, 100000); 
-			//(( ((((~temp) & 0x7FFF) + 1) * 3900)  / 100000 ) * (-1))
+			max17042->temp_cached = COMPLEMENT_VAL(temp, TEMP_RESOLUTION, 1); 
+			//(~(temp & 0x7FFF) + 1) * TEMP_RESOLUTION * (-1);
 		}
 		else {
 			//positive value
-			max17042->temp_cached = NON_COMPLEMENT_VAL(temp, TEMP_RESOLUTION, 100000);
-			//( ((((~temp) & 0x7FFF) + 1) * 3900)  / 100000 ) )
+			max17042->temp_cached = NON_COMPLEMENT_VAL(temp, TEMP_RESOLUTION, 1);
+			//(temp & 0x7FFF) * TEMP_RESOLUTION;
 		}
 	}
 
@@ -769,19 +764,27 @@ static int max17042_battery_temperature(struct max17042_data* max17042)
 static int max17042_battery_rsoc(struct max17042_data* max17042)
 {
 	int err;
-	u16 soc = 0;
+	u16 soc, socrep;
 
-        err =max17042_read(MAX17042_SOCREP, &soc, max17042);	
+	soc = socrep = 0;
+
+        err =max17042_read(MAX17042_SOCREP, &socrep, max17042);
         //DEBUG("soc = 0x%04x\n", soc);
         if ( err < 0 ) 
         	dev_err(&max17042->client->dev, "read err SOCREP \n");
 	else {
-		soc >>= 8; //take upper byte
+		soc = socrep >> 8; // take upper byte (bit 8 is 1%)
+
+		// round up if xx.5% or greater (bit 7 is 0.5%)
+		if ( socrep & (1<<7) )
+		    soc++;
+
 		if(soc>100)
-	   	soc = 100;
+		    soc = 100;
+
 		max17042->rsoc_cached = soc;
 	}
-	
+
 	return err;
 }
 
@@ -798,7 +801,7 @@ static int max17042_battery_tte(struct max17042_data* max17042)
 	else {
 		max17042->tte_cached = (tte * TTE_RESOLUTION) /1000;
 	}
-	
+
 	return err; 
 }
 
@@ -816,7 +819,7 @@ static int max17042_save_reg(struct max17042_data* max17042)
 	int i=0;
 
 	max_buf[i++] = tag;
-		
+
 	err =max17042_read(MAX17042_FullCAP, &max_buf[i++], max17042);	
         //DEBUG("fullcap = 0x%04x\n", max_buf[i-1]);
         if ( err < 0 ) {
@@ -875,7 +878,7 @@ static int max17042_save_reg(struct max17042_data* max17042)
 
 	max_buf[i++] = 0x0000;	//dQacc, don't save them as we calculate them on restore
 	max_buf[i++] = 0x0000;	//dPacc,  don't save them as we calculate them on restore
-		
+
 	//this is for step 23 and step 3.
 	err =max17042_read(MAX17042_SOCmix, &max_buf[i++], max17042);	
         //DEBUG("socmix = 0x%04x\n", max_buf[i-1]);
@@ -935,7 +938,7 @@ static int max17042_save_reg(struct max17042_data* max17042)
 	//this is for Capacity in all steps
 	max_buf[i] = max_buf[i-1]; 	//copy DesignCap to Capacity
 	i++;
-	
+
 	err =max17042_read(MAX17042_SOCREP, &max_buf[i++], max17042);	
         //DEBUG("socrep = 0x%04x\n", max_buf[i-1]);
         if ( err < 0 ) {
@@ -952,7 +955,7 @@ static int max17042_save_reg(struct max17042_data* max17042)
 
 void max17042_update_callback(u8 charger_in)
 {
-	
+
 	if(!globe_max17042_data)
 		return;
 	/*cahrge status is updated ONLY by charger when there is an AC/USB event*/
@@ -991,7 +994,7 @@ static void max17042_battery_status_monitor(struct work_struct *work)
 		//since we set Temperature Ts bit of Reg_1Dh as sticky, 
 		//we need to monitor Tmn/Tmx to clear them once the threshold is not violated		
 		buf &= ~ ( (1<<15) | (1<<11) | (1<<9) | (1<<13) );	//Br|Bi|Tmn|Tmx
-		
+
 		if ( max17042->status & ((1<<15) | (1<<11) | (1<<9) | (1<<13)) ) {
 			err =max17042_write(MAX17042_STATUS, &buf, max17042);
 			DEBUG("monitor upate status = 0x%04x\n", buf);
@@ -1001,7 +1004,7 @@ static void max17042_battery_status_monitor(struct work_struct *work)
 				max17042->status = buf;
 		}
 	}
-	
+
 	if (max17042_battery_voltage(max17042) < 0 ) {
 		max17042->health = POWER_SUPPLY_HEALTH_UNKNOWN;
 	}
@@ -1024,7 +1027,7 @@ static void max17042_battery_status_monitor(struct work_struct *work)
 	    max17042->health = POWER_SUPPLY_HEALTH_UNKNOWN;
 	    printk( KERN_ERR "max17042 monitor: failed to read temperature\n");
 	} 
-	
+
 	if (max17042_battery_tte(max17042) < 0) {
 	    max17042->health = POWER_SUPPLY_HEALTH_UNKNOWN;                
 	    printk( KERN_ERR "max17042 monitor: failed to read tte\n");
@@ -1104,9 +1107,9 @@ static void max17042_battery_status_monitor(struct work_struct *work)
 static ssize_t max17042_r_val(struct device *dev, struct device_attribute *attr, char *buf)
 {
         u16 rtval = 0x0;
-        int err;        
+        int err = 0;       
         struct max17042_data *max17042 = dev_get_drvdata(dev);
-        
+
         err = max17042_read(max17042->max17042_reg, &rtval, max17042);
         if ( err < 0 ) {
         	DEBUG( KERN_ERR "sysfs: max17042 reg value read errror.");
@@ -1177,17 +1180,17 @@ static ssize_t max17042_r_interval(struct device *dev, struct device_attribute *
 {
         struct max17042_data *max17042 = dev_get_drvdata(dev);
 		  unsigned long interval;
-	 	
+
 	interval=(atomic_read(&max17042->interval)/HZ);
-		
-        return sprintf(buf, "MAX17042: polling interval reads %lu HZ\n", interval);
+
+	return sprintf(buf, "MAX17042: polling interval reads %lu HZ\n", interval);
 }
 static DEVICE_ATTR(interval, S_IWUSR | S_IRUGO, max17042_r_interval, max17042_w_interval);
 
 static ssize_t max17042_w_dumpformat(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
         struct max17042_data *max17042 = dev_get_drvdata(dev);
-        
+
 	if ( !count )
 	    return -EINVAL;
 
@@ -1324,7 +1327,7 @@ static int __devinit max17042_probe(struct i2c_client *client,
 	max17042->rsoc_base = max17042->rsoc_cached = 100;
 	max17042->volt_cached = 4000000;
 	max17042->curr_cached = 300000;
-   	max17042->temp_cached = 250;	
+   	max17042->temp_cached = 25000000;	
 	max17042->dumpFormat = DUMP_FMT_NONE;
 	max17042->next_save = jiffies + HISTORY_REFRESH_INTERVAL*HZ;
 
@@ -1392,7 +1395,7 @@ static int __devinit max17042_probe(struct i2c_client *client,
 		dev_err(&client->dev, "failed to register battery\n");
 		goto err5;
 	}
-	
+
 	dev_info(&client->dev, "support ver. %s enabled\n", DRIVER_VERSION);
 
         //mutex_unlock(&battery_mutex);
@@ -1419,13 +1422,13 @@ err0:
 	mutex_lock(&battery_mutex);
 	idr_remove(&battery_id, num);
 	mutex_unlock(&battery_mutex);
-	
+
         return err;
 }
 
 static int __devexit max17042_remove(struct i2c_client *client)
 {
-        struct max17042_data *max17042 = i2c_get_clientdata(client);
+	struct max17042_data *max17042 = i2c_get_clientdata(client);
 
 	power_supply_unregister(&max17042->bat);
 	sysfs_remove_group(&client->dev.kobj, &max17042_attribute_group);
@@ -1491,15 +1494,15 @@ static const struct i2c_device_id max17042_id[] = {
 MODULE_DEVICE_TABLE(i2c, max17042_id);
 
 static struct i2c_driver max17042_driver = {
-        .driver = {
-                   .name = NAME,
-                   },
-        .probe = max17042_probe,
-        .remove = __devexit_p(max17042_remove),
-        .resume = max17042_resume,
-        .suspend = max17042_suspend,
+	.driver = {
+		.name = NAME,
+	},
+	.probe = max17042_probe,
+	.remove = __devexit_p(max17042_remove),
+	.resume = max17042_resume,
+	.suspend = max17042_suspend,
 	.shutdown = max17042_shutdown,
-        .id_table = max17042_id,
+	.id_table = max17042_id,
 };
 
 static int __init max17042_init(void)
@@ -1519,4 +1522,3 @@ module_exit(max17042_exit);
 MODULE_AUTHOR("Intrinsyc Software Inc., <support@intrinsyc.com>");
 MODULE_DESCRIPTION("MAX17042 Battery Gas Gauge");
 MODULE_LICENSE("GPL");
-
