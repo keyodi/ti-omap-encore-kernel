@@ -301,14 +301,14 @@ int  cyttsp_dev_init(int resource)
 }
 
 static struct cyttsp_platform_data cyttsp_platform_data = {
-	.maxx = 600,
-	.maxy = 1024,
-	.flags = 0,
+	.maxx = 1024,
+	.maxy = 600,
+	.flags = FLIP_DATA_FLAG | REVERSE_Y_FLAG,
 	.gen = CY_GEN3,
 	.use_st = CY_USE_ST,
 	.use_mt = CY_USE_MT,
 	.use_hndshk = CY_SEND_HNDSHK,
-	.use_trk_id = CY_USE_TRACKING_ID,
+	.use_trk_id = 1, //CY_USE_TRACKING_ID,
 	.use_sleep = CY_USE_SLEEP,
 	.use_gestures = CY_USE_GESTURES,
 	/* activate up to 4 groups
