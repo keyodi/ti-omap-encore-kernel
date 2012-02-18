@@ -38,8 +38,9 @@ static IMG_VOID
 BM_FreeMemory (IMG_VOID *pH, IMG_UINTPTR_T base, BM_MAPPING *psMapping);
 static IMG_BOOL
 BM_ImportMemory(IMG_VOID *pH, IMG_SIZE_T uSize,
-					IMG_SIZE_T *pActualSize, BM_MAPPING **ppsMapping,
-					IMG_UINT32 uFlags, IMG_UINTPTR_T *pBase);
+				IMG_SIZE_T *pActualSize, BM_MAPPING **ppsMapping,
+				IMG_UINT32 uFlags, IMG_PVOID pvPrivData,
+				IMG_UINT32 ui32PrivDataLength, IMG_UINTPTR_T *pBase);
 
 static IMG_BOOL
 DevMemoryAlloc (BM_CONTEXT *pBMContext,
@@ -52,13 +53,15 @@ static IMG_VOID
 DevMemoryFree (BM_MAPPING *pMapping);
 
 static IMG_BOOL
-AllocMemory (BM_CONTEXT				*pBMContext,
-				BM_HEAP				*psBMHeap,
-				IMG_DEV_VIRTADDR	*psDevVAddr,
-				IMG_SIZE_T			uSize,
-				IMG_UINT32			uFlags,
-				IMG_UINT32			uDevVAddrAlignment,
-				BM_BUF				*pBuf)
+AllocMemory (BM_CONTEXT			*pBMContext,
+			 BM_HEAP			*psBMHeap,
+			 IMG_DEV_VIRTADDR	*psDevVAddr,
+			 IMG_SIZE_T			uSize,
+			 IMG_UINT32			uFlags,
+			 IMG_UINT32			uDevVAddrAlignment,
+			 IMG_PVOID			pvPrivData,
+			 IMG_UINT32			ui32PrivDataLength,
+			 BM_BUF				*pBuf)
 {
 	BM_MAPPING			*pMapping;
 	IMG_UINTPTR_T		uOffset;
@@ -105,6 +108,8 @@ AllocMemory (BM_CONTEXT				*pBMContext,
 					  uFlags,
 					  uDevVAddrAlignment,
 					  0,
+					  pvPrivData,
+					  ui32PrivDataLength,
 					  (IMG_UINTPTR_T *)&(pBuf->DevVAddr.uiAddr)))
 		{
 			PVR_DPF((PVR_DBG_ERROR, "AllocMemory: RA_Alloc(0x%x) FAILED", uSize));
@@ -175,15 +180,22 @@ AllocMemory (BM_CONTEXT				*pBMContext,
 		}
 		else
 		{
+			IMG_BOOL bResult;
 			
 
 			
-			pBMContext->psDeviceNode->pfnMMUAlloc (psBMHeap->pMMUHeap,
+			bResult = pBMContext->psDeviceNode->pfnMMUAlloc (psBMHeap->pMMUHeap,
 													uSize,
 													IMG_NULL,
 													0,
 													uDevVAddrAlignment,
 													&pBuf->DevVAddr);
+
+			if(!bResult)
+			{
+				PVR_DPF((PVR_DBG_ERROR, "AllocMemory: MMUAlloc failed"));
+				return IMG_FALSE;
+			}
 		}
 
 		
@@ -526,6 +538,7 @@ static IMG_VOID
 FreeBuf (BM_BUF *pBuf, IMG_UINT32 ui32Flags, IMG_BOOL bFromAllocator)
 {
 	BM_MAPPING *pMapping;
+	PVRSRV_DEVICE_NODE *psDeviceNode;
 
 	PVR_DPF ((PVR_DBG_MESSAGE,
 			"FreeBuf: pBuf=0x%x: DevVAddr=%08X CpuVAddr=0x%x CpuPAddr=%08X",
@@ -534,6 +547,12 @@ FreeBuf (BM_BUF *pBuf, IMG_UINT32 ui32Flags, IMG_BOOL bFromAllocator)
 
 	
 	pMapping = pBuf->pMapping;
+
+	psDeviceNode = pMapping->pBMHeap->pBMContext->psDeviceNode;
+	if (psDeviceNode->pfnCacheInvalidate)
+	{
+		psDeviceNode->pfnCacheInvalidate(psDeviceNode);
+	}
 
 	if(ui32Flags & PVRSRV_MEM_USER_SUPPLIED_DEVVADDR)
 	{
@@ -695,7 +714,7 @@ BM_DestroyContext(IMG_HANDLE	hBMContext,
 	else
 	{
 		
-		eError = ResManFreeResByPtr(pBMContext->hResItem);
+		eError = ResManFreeResByPtr(pBMContext->hResItem, CLEANUP_WITH_POLL);
 		if(eError != PVRSRV_OK)
 		{
 			PVR_DPF ((PVR_DBG_ERROR, "BM_DestroyContext: ResManFreeResByPtr failed %d",eError));
@@ -745,13 +764,15 @@ static PVRSRV_ERROR BM_DestroyContextCallBack_AnyVaCb(BM_HEAP *psBMHeap, va_list
 }
 
 
-static PVRSRV_ERROR BM_DestroyContextCallBack(IMG_PVOID		pvParam,
-											  IMG_UINT32	ui32Param)
+static PVRSRV_ERROR BM_DestroyContextCallBack(IMG_PVOID   pvParam,
+											  IMG_UINT32  ui32Param,
+											  IMG_BOOL    bDummy)
 {
 	BM_CONTEXT *pBMContext = pvParam;
 	PVRSRV_DEVICE_NODE *psDeviceNode;
 	PVRSRV_ERROR eError;
 	PVR_UNREFERENCED_PARAMETER(ui32Param);
+	PVR_UNREFERENCED_PARAMETER(bDummy);
 
 	
 
@@ -898,9 +919,9 @@ BM_CreateContext(PVRSRV_DEVICE_NODE			*psDeviceNode,
 		goto cleanup;
 	}
 
-	if(psDeviceNode->pfnMMUInitialise(psDeviceNode,
-										&pBMContext->psMMUContext,
-										psPDDevPAddr) != PVRSRV_OK)
+	if((IMG_NULL == psDeviceNode->pfnMMUInitialise) || (psDeviceNode->pfnMMUInitialise(psDeviceNode,
+											&pBMContext->psMMUContext,
+											psPDDevPAddr) != PVRSRV_OK))
 	{
 		PVR_DPF((PVR_DBG_ERROR, "BM_CreateContext: MMUInitialise failed"));
 		goto cleanup;
@@ -969,7 +990,7 @@ BM_CreateContext(PVRSRV_DEVICE_NODE			*psDeviceNode,
 	return (IMG_HANDLE)pBMContext;
 
 cleanup:
-	(IMG_VOID)BM_DestroyContextCallBack(pBMContext, 0);
+	(IMG_VOID)BM_DestroyContextCallBack(pBMContext, 0, CLEANUP_WITH_POLL);
 
 	return IMG_NULL;
 }
@@ -1050,6 +1071,9 @@ BM_CreateHeap (IMG_HANDLE hBMContext,
 	psBMHeap->sDevArena.ui32DataPageSize = psDevMemHeapInfo->ui32DataPageSize;
 	psBMHeap->sDevArena.psDeviceMemoryHeapInfo = psDevMemHeapInfo;
 	psBMHeap->ui32Attribs = psDevMemHeapInfo->ui32Attribs;
+#if defined(SUPPORT_MEMORY_TILING)
+	psBMHeap->ui32XTileStride = psDevMemHeapInfo->ui32XTileStride;
+#endif
 
 	
 	psBMHeap->pBMContext = pBMContext;
@@ -1173,6 +1197,8 @@ BM_Alloc (  IMG_HANDLE			hDevMemHeap,
 			IMG_SIZE_T			uSize,
 			IMG_UINT32			*pui32Flags,
 			IMG_UINT32			uDevVAddrAlignment,
+			IMG_PVOID			pvPrivData,
+			IMG_UINT32			ui32PrivDataLength,
 			BM_HANDLE			*phBuf)
 {
 	BM_BUF *pBuf;
@@ -1222,6 +1248,8 @@ BM_Alloc (  IMG_HANDLE			hDevMemHeap,
 					uSize,
 					uFlags,
 					uDevVAddrAlignment,
+					pvPrivData,
+					ui32PrivDataLength,
 					pBuf) != IMG_TRUE)
 	{
 		OSFreeMem(PVRSRV_OS_PAGEABLE_HEAP, sizeof (BM_BUF), pBuf, IMG_NULL);
@@ -1380,7 +1408,7 @@ BM_Wrap (	IMG_HANDLE hDevMemHeap,
 					"BM_Wrap (Matched previous Wrap! uSize=0x%x, uOffset=0x%x, SysAddr=%08X)",
 					ui32Size, ui32Offset, sHashAddress.uiAddr));
 
-			pBuf->ui32RefCount++;
+			PVRSRVBMBufIncRef(pBuf);
 			*phBuf = (BM_HANDLE)pBuf;
 			if(pui32Flags)
 				*pui32Flags = uFlags;
@@ -1449,7 +1477,7 @@ BM_Export (BM_HANDLE hBuf)
 {
 	BM_BUF *pBuf = (BM_BUF *)hBuf;
 
-	pBuf->ui32ExportCount++;
+	PVRSRVBMBufIncExport(pBuf);
 }
 
 IMG_VOID
@@ -1458,7 +1486,7 @@ BM_FreeExport(BM_HANDLE hBuf,
 {
 	BM_BUF *pBuf = (BM_BUF *)hBuf;
 
-	pBuf->ui32ExportCount--;
+	PVRSRVBMBufDecExport(pBuf);
 	FreeBuf (pBuf, ui32Flags, IMG_FALSE);
 }
 
@@ -1481,8 +1509,7 @@ BM_Free (BM_HANDLE hBuf,
 
 	SysAcquireData(&psSysData);
 
-	pBuf->ui32RefCount--;
-
+	PVRSRVBMBufDecRef(pBuf);
 	if(pBuf->ui32RefCount == 0)
 	{
 		if(pBuf->pMapping->eCpuMemoryOrigin == hm_wrapped || pBuf->pMapping->eCpuMemoryOrigin == hm_wrapped_virtaddr)
@@ -1723,11 +1750,18 @@ DevMemoryFree (BM_MAPPING *pMapping)
 	psDeviceNode->pfnMMUFree (pMapping->pBMHeap->pMMUHeap, pMapping->DevVAddr, IMG_CAST_TO_DEVVADDR_UINT(pMapping->uSize));
 }
 
+#ifndef XPROC_WORKAROUND_NUM_SHAREABLES
 #define XPROC_WORKAROUND_NUM_SHAREABLES 200
+#endif
 
 #define XPROC_WORKAROUND_BAD_SHAREINDEX 0773407734
 
+#define XPROC_WORKAROUND_UNKNOWN	0
+#define XPROC_WORKAROUND_ALLOC		1
+#define XPROC_WORKAROUND_MAP		2
+
 static IMG_UINT32 gXProcWorkaroundShareIndex = XPROC_WORKAROUND_BAD_SHAREINDEX;
+static IMG_UINT32 gXProcWorkaroundState = XPROC_WORKAROUND_UNKNOWN;
 
  
 static struct {
@@ -1753,6 +1787,7 @@ PVRSRV_ERROR BM_XProcWorkaroundSetShareIndex(IMG_UINT32 ui32Index)
 	}
 
 	gXProcWorkaroundShareIndex = ui32Index;
+	gXProcWorkaroundState = XPROC_WORKAROUND_MAP;
 
 	return PVRSRV_OK;
 }
@@ -1774,6 +1809,7 @@ PVRSRV_ERROR BM_XProcWorkaroundUnsetShareIndex(IMG_UINT32 ui32Index)
 	}
 
 	gXProcWorkaroundShareIndex = XPROC_WORKAROUND_BAD_SHAREINDEX;
+	gXProcWorkaroundState = XPROC_WORKAROUND_UNKNOWN;
 
 	return PVRSRV_OK;
 }
@@ -1793,6 +1829,7 @@ PVRSRV_ERROR BM_XProcWorkaroundFindNewBufferAndSetShareIndex(IMG_UINT32 *pui32In
 		if (gXProcWorkaroundShareData[*pui32Index].ui32RefCount == 0)
 		{
 			gXProcWorkaroundShareIndex = *pui32Index;
+			gXProcWorkaroundState = XPROC_WORKAROUND_ALLOC;
 			return PVRSRV_OK;
 		}
 	}
@@ -1806,6 +1843,8 @@ XProcWorkaroundAllocShareable(RA_ARENA *psArena,
                               IMG_UINT32 ui32AllocFlags,
                               IMG_UINT32 ui32Size,
                               IMG_UINT32 ui32PageSize,
+							  IMG_PVOID pvPrivData,
+							  IMG_UINT32 ui32PrivDataLength,
                               IMG_VOID **ppvCpuVAddr,
                               IMG_HANDLE *phOSMemHandle)
 {
@@ -1849,12 +1888,20 @@ XProcWorkaroundAllocShareable(RA_ARENA *psArena,
 		*ppvCpuVAddr = gXProcWorkaroundShareData[gXProcWorkaroundShareIndex].pvCpuVAddr;
 		*phOSMemHandle = gXProcWorkaroundShareData[gXProcWorkaroundShareIndex].hOSMemHandle;
 
-		gXProcWorkaroundShareData[gXProcWorkaroundShareIndex].ui32RefCount ++;
+		gXProcWorkaroundShareData[gXProcWorkaroundShareIndex].ui32RefCount++;
 
 		return PVRSRV_OK;
 	}
 	else
 	{
+		if (gXProcWorkaroundState != XPROC_WORKAROUND_ALLOC)
+		{
+			PVR_DPF((PVR_DBG_ERROR,
+					 "XPROC workaround in bad state! About to allocate memory from non-alloc state! (%d)",
+					 gXProcWorkaroundState));
+		}
+		PVR_ASSERT(gXProcWorkaroundState == XPROC_WORKAROUND_ALLOC);
+
 		if (psArena != IMG_NULL)
 		{
 			IMG_CPU_PHYADDR sCpuPAddr;
@@ -1870,6 +1917,8 @@ XProcWorkaroundAllocShareable(RA_ARENA *psArena,
 						   0,
                            ui32PageSize,
 						   0,
+						   pvPrivData,
+						   ui32PrivDataLength,
 						   (IMG_UINTPTR_T *)&sSysPAddr.uiAddr))
 			{
 				PVR_DPF((PVR_DBG_ERROR, "XProcWorkaroundAllocShareable: RA_Alloc(0x%x) FAILED", ui32Size));
@@ -1900,6 +1949,8 @@ XProcWorkaroundAllocShareable(RA_ARENA *psArena,
             if (OSAllocPages(ui32AllocFlags,
                              ui32Size,
                              ui32PageSize,
+							 pvPrivData,
+							 ui32PrivDataLength,
                              (IMG_VOID **)&gXProcWorkaroundShareData[gXProcWorkaroundShareIndex].pvCpuVAddr,
                              &gXProcWorkaroundShareData[gXProcWorkaroundShareIndex].hOSMemHandle) != PVRSRV_OK)
             {
@@ -1918,7 +1969,7 @@ XProcWorkaroundAllocShareable(RA_ARENA *psArena,
 		*ppvCpuVAddr = gXProcWorkaroundShareData[gXProcWorkaroundShareIndex].pvCpuVAddr;
 		*phOSMemHandle = gXProcWorkaroundShareData[gXProcWorkaroundShareIndex].hOSMemHandle;
 
-		gXProcWorkaroundShareData[gXProcWorkaroundShareIndex].ui32RefCount ++;
+		gXProcWorkaroundShareData[gXProcWorkaroundShareIndex].ui32RefCount++;
 
 		return PVRSRV_OK;
 	}
@@ -1970,7 +2021,7 @@ static IMG_VOID XProcWorkaroundFreeShareable(IMG_HANDLE hOSMemHandle)
 		return;
 	}
 
-	gXProcWorkaroundShareData[ui32SI].ui32RefCount --;
+	gXProcWorkaroundShareData[ui32SI].ui32RefCount--;
 
 	PVR_DPF((PVR_DBG_VERBOSE, "Reduced refcount of SI[%d] from %d to %d",
 			 ui32SI, gXProcWorkaroundShareData[ui32SI].ui32RefCount+1, gXProcWorkaroundShareData[ui32SI].ui32RefCount));
@@ -2011,6 +2062,8 @@ BM_ImportMemory (IMG_VOID *pH,
 			  IMG_SIZE_T *pActualSize,
 			  BM_MAPPING **ppsMapping,
 			  IMG_UINT32 uFlags,
+			  IMG_PVOID pvPrivData,
+			  IMG_UINT32 ui32PrivDataLength,
 			  IMG_UINTPTR_T *pBase)
 {
 	BM_MAPPING *pMapping;
@@ -2075,6 +2128,12 @@ BM_ImportMemory (IMG_VOID *pH,
 		IMG_UINT32 ui32Attribs = pBMHeap->ui32Attribs | PVRSRV_MEM_XPROC;
         IMG_BOOL bBadBackingStoreType;
 
+        
+        if(uFlags & PVRSRV_MEM_ION)
+        {
+            ui32Attribs |= PVRSRV_MEM_ION;
+        }
+
         bBadBackingStoreType = IMG_TRUE; 
 
 		if ((ui32Attribs & PVRSRV_BACKINGSTORE_SYSMEM_NONCONTIG) != 0)
@@ -2102,8 +2161,10 @@ BM_ImportMemory (IMG_VOID *pH,
 		
 		if (XProcWorkaroundAllocShareable(IMG_NULL,
                                           ui32Attribs,
-							   (IMG_UINT32)uPSize,
+										  (IMG_UINT32)uPSize,
                                           pBMHeap->sDevArena.ui32DataPageSize,
+										  pvPrivData,
+										  ui32PrivDataLength,
                                           (IMG_VOID **)&pMapping->CpuVAddr,
                                           &pMapping->hOSMemHandle) != PVRSRV_OK)
 		{
@@ -2143,6 +2204,8 @@ BM_ImportMemory (IMG_VOID *pH,
                                               ui32Attribs,
                                               (IMG_UINT32)uPSize,
                                               pBMHeap->sDevArena.ui32DataPageSize,
+											  pvPrivData,
+											  ui32PrivDataLength,
                                               (IMG_VOID **)&pMapping->CpuVAddr,
                                               &pMapping->hOSMemHandle) != PVRSRV_OK)
             {
@@ -2179,11 +2242,19 @@ BM_ImportMemory (IMG_VOID *pH,
 			ui32Attribs &= ~PVRSRV_HAP_CACHETYPE_MASK;
 			ui32Attribs |= (pMapping->ui32Flags & PVRSRV_HAP_CACHETYPE_MASK);
 		}
-
+		
+		if (pMapping->ui32Flags & PVRSRV_MEM_ALLOCATENONCACHEDMEM)
+		{
+			ui32Attribs &= ~PVRSRV_MEM_ALLOCATENONCACHEDMEM;
+			ui32Attribs |= (pMapping->ui32Flags & PVRSRV_MEM_ALLOCATENONCACHEDMEM);
+		}		
+		
 		
 		if (OSAllocPages(ui32Attribs,
 						 uPSize,
 						 pBMHeap->sDevArena.ui32DataPageSize,
+						 pvPrivData,
+						 ui32PrivDataLength,
 						 (IMG_VOID **)&pMapping->CpuVAddr,
 						 &pMapping->hOSMemHandle) != PVRSRV_OK)
 		{
@@ -2218,6 +2289,8 @@ BM_ImportMemory (IMG_VOID *pH,
 					   0,
 					   pBMHeap->sDevArena.ui32DataPageSize,
 					   0,
+					   pvPrivData,
+					   ui32PrivDataLength,
 					   (IMG_UINTPTR_T *)&sSysPAddr.uiAddr))
 		{
 			PVR_DPF((PVR_DBG_ERROR, "BM_ImportMemory: RA_Alloc(0x%x) FAILED", uPSize));
