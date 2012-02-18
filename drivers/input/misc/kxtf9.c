@@ -21,7 +21,6 @@
 #include <linux/errno.h>
 #include <linux/delay.h>
 #include <linux/fs.h>
-#include <linux/slab.h>
 #include <linux/i2c.h>
 #include <linux/input.h>
 #include <linux/uaccess.h>
@@ -29,6 +28,7 @@
 #include <linux/irq.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
+#include <linux/slab.h>
 
 //#define KXTF9_DEBUG
 
@@ -88,13 +88,13 @@ struct {
 	u8 mask;
 } kxtf9_odr_table[] = {
 	{
-	3,	ODR800}, {
-	5,	ODR400}, {
-	10,	ODR200}, {
-	20,	ODR100}, {
-	40,	ODR50}, {
-	80,	ODR25}, {
-	0,	ODR12_5},
+	3,	ODR800F}, {
+	5,	ODR400F}, {
+	10,	ODR200F}, {
+	20,	ODR100F}, {
+	40,	ODR50F}, {
+	80,	ODR25F}, {
+	0,	ODR12_5F},
 };
 
 struct kxtf9_data {
@@ -206,27 +206,27 @@ static int kxtf9_hw_init(struct kxtf9_data *tf9)
 	if (err < 0)
 		return err;
 	aprintk("kxtf9: kxtf9_hw_init > kxtf9 resume DATA_CTRL_REG!\n");
-	
+
 	err = kxtf9_i2c_write(tf9, CTRL_REG3, &tf9->resume[RES_CTRL_REG3], 1);
 	if (err < 0)
 		return err;
 	aprintk("kxtf9: kxtf9_hw_init > kxtf9 resume CTRL_REG3!\n");
-	
+
 	err = kxtf9_i2c_write(tf9, TILT_TIMER, &tf9->resume[RES_TILT_TIMER], 1);
 	if (err < 0)
 		return err;
 	aprintk("kxtf9: kxtf9_hw_init > kxtf9 resume TILT_TIMER!\n");
-	
+
 	err = kxtf9_i2c_write(tf9, WUF_TIMER, &tf9->resume[RES_WUF_TIMER], 1);
 	if (err < 0)
 		return err;
 	aprintk("kxtf9: kxtf9_hw_init > kxtf9 resume WUF_TIMER!\n");
-	
+
 	err = kxtf9_i2c_write(tf9, WUF_THRESH, &tf9->resume[RES_WUF_THRESH], 1);
 	if (err < 0)
 		return err;
 	aprintk("kxtf9: kxtf9_hw_init > kxtf9 resume WUF_THERSH!\n");
-	
+
 	buf[0] = tf9->resume[RES_TDT_TIMER];
 	buf[1] = tf9->resume[RES_TDT_H_THRESH];
 	buf[2] = tf9->resume[RES_TDT_L_THRESH];
@@ -865,8 +865,8 @@ static ssize_t kxtf9_abort_store(struct device *dev,
 
 	aprintk("kxtf9: kxtf9_abort_store ...\n");
 
-printk(KERN_ERR "FIXME: fix input_dev in kxtf9_abort_store\n");
-//	input_event(dev, EV_SYN, SYN_REPORT, -1);
+	if (tf9->input_dev)
+		input_event(tf9->input_dev, EV_SYN, SYN_REPORT, -1);
 
 	return count;
 }
@@ -1084,10 +1084,8 @@ static struct i2c_driver kxtf9_driver = {
 		   },
 	.probe = kxtf9_probe,
 	.remove = __devexit_p(kxtf9_remove),
-#ifdef CONFIG_PM
 	.resume = kxtf9_resume,
 	.suspend = kxtf9_suspend,
-#endif
 	.id_table = kxtf9_id,
 };
 

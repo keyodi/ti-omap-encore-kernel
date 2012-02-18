@@ -170,66 +170,53 @@ static void __init omap_encore_init_irq(void)
 
 static void kxtf9_dev_init(void)
 {
-	printk("board-encore.c: kxtf9_dev_init ...\n");
-
-//	if (gpio_request(KXTF9_GPIO_FOR_PWR, "kxtf9_pwr") < 0) {
-//		printk(KERN_ERR "+++++++++++++ Can't get GPIO for kxtf9 power\n");
-//		return;
-//	}
-        // Roberto's comment: G-sensor is powered by VIO and does not need to be powered enabled
-	//gpio_direction_output(KXTF9_GPIO_FOR_PWR, 1);
+	printk("board-3621_evt1a.c: kxtf9_dev_init ...\n");
 
 	if (gpio_request(KXTF9_GPIO_FOR_IRQ, "kxtf9_irq") < 0) {
 		printk(KERN_ERR "Can't get GPIO for kxtf9 IRQ\n");
 		return;
 	}
 
-	printk("board-encore.c: kxtf9_dev_init > Init kxtf9 irq pin %d !\n", KXTF9_GPIO_FOR_IRQ);
+	printk("board-3621_evt1a.c: kxtf9_dev_init > Init kxtf9 irq pin %d !\n", KXTF9_GPIO_FOR_IRQ);
 	gpio_direction_input(KXTF9_GPIO_FOR_IRQ);
+	gpio_set_debounce(KXTF9_GPIO_FOR_IRQ, 0);
 }
 
+
 struct kxtf9_platform_data kxtf9_platform_data_here = {
-        .min_interval   = 1,
-        .poll_interval  = 1000,
+	.min_interval   = 1,
+	.poll_interval  = 1000,
 
-        .g_range        = KXTF9_G_8G,
-        .shift_adj      = SHIFT_ADJ_2G,
+	.g_range        = KXTF9_G_8G,
+	.shift_adj      = SHIFT_ADJ_2G,
 
-		// Map the axes from the sensor to the device.
-		
-		//. SETTINGS FOR THE EVT1A TEST RIG:
-        .axis_map_x     = 1,
-        .axis_map_y     = 0,
-        .axis_map_z     = 2,
-        .negate_x       = 1,
-        .negate_y       = 0,
-        .negate_z       = 0,
-		
-		//. SETTINGS FOR THE ENCORE PRODUCT:
-        //. .axis_map_x     = 1,
-        //. .axis_map_y     = 0,
-        //. .axis_map_z     = 2,
-        //. .negate_x       = 1,
-        //. .negate_y       = 0,
-        //. .negate_z       = 0,
+	// Map the axes from the sensor to the device.
 
-        .data_odr_init          = ODR12_5,
-        .ctrl_reg1_init         = KXTF9_G_8G | RES_12BIT | TDTE | WUFE | TPE,
-        .int_ctrl_init          = KXTF9_IEN | KXTF9_IEA | KXTF9_IEL,
-        .int_ctrl_init          = KXTF9_IEN,
-        .tilt_timer_init        = 0x03,
-        .engine_odr_init        = OTP12_5 | OWUF50 | OTDT400,
-        .wuf_timer_init         = 0x16,
-        .wuf_thresh_init        = 0x28,
-        .tdt_timer_init         = 0x78,
-        .tdt_h_thresh_init      = 0xFF,
-        .tdt_l_thresh_init      = 0x14,
-        .tdt_tap_timer_init     = 0x53,
-        .tdt_total_timer_init   = 0x24,
-        .tdt_latency_timer_init = 0x10,
-        .tdt_window_timer_init  = 0xA0,
+	//. SETTINGS FOR THE EVT1A:
+	.axis_map_x     = 0,
+	.axis_map_y     = 1,
+	.axis_map_z     = 2,
+	.negate_x       = 1,
+	.negate_y       = 1,
+	.negate_z       = 0,
 
-        .gpio = KXTF9_GPIO_FOR_IRQ,
+	.data_odr_init          = ODR12_5F,
+	.ctrl_reg1_init         = KXTF9_G_8G | RES_12BIT | TDTE | WUFE | TPE,
+	.int_ctrl_init          = KXTF9_IEN | KXTF9_IEA | KXTF9_IEL,
+	.int_ctrl_init          = KXTF9_IEN,
+	.tilt_timer_init        = 0x03,
+	.engine_odr_init        = OTP12_5 | OWUF50 | OTDT400,
+	.wuf_timer_init         = 0x16,
+	.wuf_thresh_init        = 0x28,
+	.tdt_timer_init         = 0x78,
+	.tdt_h_thresh_init      = 0xFF,
+	.tdt_l_thresh_init      = 0x14,
+	.tdt_tap_timer_init     = 0x53,
+	.tdt_total_timer_init   = 0x24,
+	.tdt_latency_timer_init = 0x10,
+	.tdt_window_timer_init  = 0xA0,
+
+	.gpio = KXTF9_GPIO_FOR_IRQ,
 };
 #endif	/* CONFIG_INPUT_KXTF9 */
 
