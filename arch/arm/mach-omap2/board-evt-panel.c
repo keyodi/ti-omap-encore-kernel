@@ -51,7 +51,7 @@ static void boxer_backlight_set_power(struct omap_pwm_led_platform_data *self, i
 static struct omap_pwm_led_platform_data boxer_backlight_data = {
 	.name            = "lcd-backlight",
 	.intensity_timer = 8,
-	.def_on          = 0,   // PWM high == backlight OFF, PWM low == backlight ON
+	.def_on          = 1,   // PWM high == backlight OFF, PWM low == backlight ON
 	.def_brightness  = DEFAULT_BACKLIGHT_BRIGHTNESS,
 	.set_power       = boxer_backlight_set_power,
 };
@@ -81,62 +81,11 @@ static void __init boxer_backlight_init(void)
 }
 
 /*--------------------------------------------------------------------------*/
-
-u8 color_component_correction[256]=
-{
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,
-10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,
-20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
-20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
-25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,
-25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,
-30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,
-30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,
-25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,
-25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,
-20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
-20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
-20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
-15,15,15,15,15,15,15,10,10,10,10,10,10,9,8,7,
-6,5,4,4,2,2,2,2,2,2,1,1,1,1,0,0,
-};
-
-static int evt_clut_fill(void * ptr, u32 size)
-{
-	u16 count;
-	u32 temp;
-	u32 *byte = (u32 *)ptr;
-	u16 color_corrected_value;
-	u8 red, green, blue;
-	for (count = 0; count < size / sizeof(u32); count++) {
-		red   = count;
-		green = count;
-		blue  = count;
-		temp = (((red << RED_SHIFT) & RED_MASK) | ((green << GREEN_SHIFT) & GREEN_MASK) | ((blue << BLUE_SHIFT) & BLUE_MASK)); 
-		*byte++ = temp;
-	}
-	/* Roll back the pointer*/
-	byte = (u32 *)ptr;
-
-	for (count = 0; count < size / sizeof(u32); count++) {
-		blue = *byte & BLUE_MASK;
-		color_corrected_value = color_component_correction[count]+blue;
-		color_corrected_value = (color_corrected_value >= MAX_COLOR_DEPTH) ? MAX_COLOR_DEPTH:color_corrected_value; 
-		temp = ((*byte & (~BLUE_MASK)) | (color_corrected_value & BLUE_MASK));
-		*byte++ = temp;
-	}
-	return 0;
-}
-
-/*--------------------------------------------------------------------------*/
 static struct omap_dss_device evt_lcd_device = {
 	.name = "lcd",
 	.driver_name = "boxer_panel",
 	.type = OMAP_DISPLAY_TYPE_DPI,
 	.phy.dpi.data_lines = 24,
-//	.clut_size = sizeof(u32) * 256,
-//	.clut_fill = evt_clut_fill,
 };
 
 static struct omap_dss_device *evt_dss_devices[] = {

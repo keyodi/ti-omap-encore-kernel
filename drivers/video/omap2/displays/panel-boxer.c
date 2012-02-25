@@ -49,7 +49,7 @@
 #define LCD_PIXCLOCK_MAX	52000 /* Maximum is 52MHz */
 
 /* Current Pixel clock */
-#define LCD_PIXEL_CLOCK		48000
+#define LCD_PIXEL_CLOCK		65000
 
 static struct workqueue_struct *boxer_panel_wq;
 static struct omap_dss_device *boxer_panel_dssdev;
@@ -74,6 +74,17 @@ static struct omap_video_timings boxer_panel_timings = {
 	.vbp            = 11,//25,
 };
 
+static void boxer_get_resolution(struct omap_dss_device *dssdev,
+				 u16 *xres, u16 *yres)
+{
+	*xres = dssdev->panel.timings.x_res;
+	*yres = dssdev->panel.timings.y_res;
+}
+
+int boxer_get_recommended_bpp(struct omap_dss_device *dssdev)
+{
+	return 24;
+}
 
 static int boxer_panel_probe(struct omap_dss_device *dssdev)
 {
@@ -83,6 +94,12 @@ printk("lcd probe\n");
 			       OMAP_DSS_LCD_IHS | OMAP_DSS_LCD_IPC;
 	dssdev->panel.timings = boxer_panel_timings;
 	return 0;
+}
+
+static void boxer_panel_get_timings(struct omap_dss_device *dssdev,
+					struct omap_video_timings *timings)
+{
+	*timings = dssdev->panel.timings;
 }
 
 static void boxer_panel_remove(struct omap_dss_device *dssdev)
@@ -103,31 +120,9 @@ static int spi_send(struct spi_device *spi, unsigned char reg_addr, unsigned cha
 	return ret;
 }
 
-static int spi_rw(struct spi_device *spi, u8 *buf, u8 *bufo ,size_t len)
-{
-	struct spi_transfer	t = {
-			.tx_buf		= buf,
-			.rx_buf		= bufo,
-			.len		= len,
-		};
-	struct spi_message	m;
-    int r;
-	spi_message_init(&m);
-	spi_message_add_tail(&t, &m);
-	r=spi_sync(spi, &m);
-	return r;
-}
-
 static void boxer_init_panel(void)
 {
 	spi_send(boxer_spi_device, 0, 0x00);
-
-/*   For evt1b, the original sequence was */
-//     spi_send(boxer_spi_device, 0, 0xad);
-//     spi_send(boxer_spi_device, 1, 0x30);
-//     spi_send(boxer_spi_device, 2, 0x40);
-//     spi_send(boxer_spi_device, 3, 0x04);
-
 	spi_send(boxer_spi_device,   0, 0xad);
 	spi_send(boxer_spi_device,   1, 0x30);
 	spi_send(boxer_spi_device,   2, 0x40);
@@ -161,11 +156,15 @@ static DECLARE_WORK(boxer_panel_work, boxer_panel_work_func);
 
 static int boxer_panel_enable(struct omap_dss_device *dssdev)
 {
-    if (atomic_add_unless(&boxer_panel_is_enabled, 1, 1)) {
+	regulator_enable(boxer_panel_regulator);
+
+	if (atomic_add_unless(&boxer_panel_is_enabled, 1, 1)) {
 		boxer_panel_dssdev = dssdev;
 		queue_work(boxer_panel_wq, &boxer_panel_work);
 	}
- 
+	omapdss_dpi_display_enable(dssdev);
+	dssdev->state=OMAP_DSS_DISPLAY_ACTIVE;
+
 	return 0;
 }
 
@@ -182,16 +181,36 @@ static void boxer_panel_disable(struct omap_dss_device *dssdev)
         printk("%s: attempting to disable panel twice!\n", __FUNCTION__);
         WARN_ON(1);
     }
+
+    omapdss_dpi_display_disable(dssdev);
+    dssdev->state = OMAP_DSS_DISPLAY_DISABLED;
+
+}
+
+static void boxer_panel_stop(struct omap_dss_device *dssdev)
+{
+	omapdss_dpi_display_disable(dssdev);
+
+	if (dssdev->platform_disable)
+		dssdev->platform_disable(dssdev);
 }
 
 static int boxer_panel_suspend(struct omap_dss_device *dssdev)
 {
-    boxer_panel_disable(dssdev);
+   /* Turn of DLP Power */
+	if (dssdev->state != OMAP_DSS_DISPLAY_ACTIVE)
+		return -EINVAL;
+
+	boxer_panel_stop(dssdev);
+
+	dssdev->state = OMAP_DSS_DISPLAY_SUSPENDED;
+
 	return 0;
 }
 
 static int boxer_panel_resume(struct omap_dss_device *dssdev)
 {
+	dssdev->state = OMAP_DSS_DISPLAY_ACTIVE;
 	return boxer_panel_enable(dssdev);
 }
 
@@ -203,13 +222,15 @@ static struct omap_dss_driver boxer_driver = {
 	.disable        = boxer_panel_disable,
 	.suspend        = boxer_panel_suspend,
 	.resume         = boxer_panel_resume,
+	.get_timings	= boxer_panel_get_timings,
+	.get_resolution = boxer_get_resolution,
+	.get_recommended_bpp = boxer_get_recommended_bpp,
 
 	.driver		= {
 		.name	= "boxer_panel",
 		.owner	= THIS_MODULE,
 	},
 };
-
 
 
 static ssize_t lcd_reg_store(struct device *dev, struct device_attribute *attr, 
@@ -260,7 +281,7 @@ static int boxer_spi_probe(struct spi_device *spi)
 	spi->mode = SPI_MODE_0;
 	spi->bits_per_word = 16;
 	spi_setup(spi);
-	
+
 	boxer_spi_device = spi;
 	printk("spi_probe mode : %x, per_word %d, chip_select %d, speed %d, master_bus %d,master_cs %d \n",spi->mode,spi->bits_per_word,spi->chip_select,spi->max_speed_hz,spi->master->bus_num, spi->master->num_chipselect);
 
@@ -334,4 +355,3 @@ static void __exit boxer_lcd_exit(void)
 module_init(boxer_lcd_init);
 module_exit(boxer_lcd_exit);
 MODULE_LICENSE("GPL");
-
