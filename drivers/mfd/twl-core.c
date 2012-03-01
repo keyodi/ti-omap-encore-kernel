@@ -237,6 +237,7 @@
 #define TPS_SUBSET		BIT(1)	/* tps659[23]0 have fewer LDOs */
 #define TWL5031			BIT(2)  /* twl5031 has different registers */
 #define TWL6030_CLASS		BIT(3)	/* TWL6030 class */
+#define TPS_65921    		BIT(4)  /* w/o vmmc2 */
 
 /*----------------------------------------------------------------------*/
 
@@ -679,6 +680,12 @@ add_children(struct twl4030_platform_data *pdata, unsigned long features)
 		static struct regulator_consumer_supply usb3v1 = {
 			.supply =	"usb3v1",
 		};
+/* Add vmmc2 that is not pressent on 65921 power */
+    if (features & TPS_65921) {
+      child = add_regulator(TWL4030_REG_VMMC2, pdata->vmmc2);
+      if (IS_ERR(child))
+        return PTR_ERR(child);
+    }
 
 	/* First add the regulators so that they can be used by transceiver */
 		if (twl_has_regulator()) {
@@ -826,6 +833,10 @@ add_children(struct twl4030_platform_data *pdata, unsigned long features)
 					? TWL4030_REG_VAUX2_4030
 					: TWL4030_REG_VAUX2,
 				pdata->vaux2);
+		if (IS_ERR(child))
+			return PTR_ERR(child);
+
+ 		child = add_regulator(TWL4030_REG_VPLL2, pdata->vpll2);
 		if (IS_ERR(child))
 			return PTR_ERR(child);
 
@@ -1211,6 +1222,7 @@ static const struct i2c_device_id twl_ids[] = {
 	{ "tps65950", 0 },		/* catalog version of twl5030 */
 	{ "tps65930", TPS_SUBSET },	/* fewer LDOs and DACs; no charger */
 	{ "tps65920", TPS_SUBSET },	/* fewer LDOs; no codec or charger */
+	{ "tps65921", TPS_SUBSET | TPS_65921 }, /* w/o vmmc2 */
 	{ "twl6030", TWL6030_CLASS },	/* "Phoenix power chip" */
 	{ /* end of list */ },
 };
