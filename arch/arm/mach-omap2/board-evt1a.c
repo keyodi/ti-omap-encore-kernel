@@ -12,17 +12,24 @@
 #include <linux/platform_device.h>
 #include <linux/input.h>
 #include <linux/gpio.h>
+#include <linux/delay.h>
 #include <linux/bootmem.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
+#include <asm/delay.h>
+
 #include <mach/board-encore.h>
 
 #include <plat/common.h>
 #include <plat/board.h>
+#include <plat/omap_device.h>
+#include <plat/usb.h>
+#include <plat/opp_twl_tps.h>
 #include <plat/timer-gp.h>
 
 #include "mux.h"
+#include "pm.h"
 #include "sdram-hynix-h8mbx00u0mer-0em.h"
 
 void __init evt_peripherals_init(void);
@@ -41,6 +48,25 @@ static void __init omap_evt_init_irq(void)
 #endif
 	omap_init_irq();	
 }
+
+/* OPP MPU/IVA Clock Frequency */
+struct opp_frequencies {
+	unsigned long mpu;
+	unsigned long iva;
+};
+
+static struct opp_frequencies opp_freq_add_table[] __initdata = {
+  {
+	.mpu = 800000000,
+	.iva = 660000000,
+  },
+  {
+	.mpu = 1000000000,
+	.iva =  800000000,
+  },
+
+  { 0, 0 },
+};
 
 #ifdef CONFIG_ANDROID_RAM_CONSOLE
 static inline void omap2_ramconsole_reserve_sdram(void)
@@ -63,9 +89,86 @@ static void __init omap_evt_map_io(void)
 	omap34xx_map_common_io();
 }
 
+/* must be called after omap2_common_pm_init() */
+static int __init encore_opp_init(void)
+{
+	struct omap_hwmod *mh, *dh;
+	struct omap_opp *mopp, *dopp;
+	struct device *mdev, *ddev;
+	struct opp_frequencies *opp_freq;
+
+
+	if (!cpu_is_omap3630())
+		return 0;
+
+	mh = omap_hwmod_lookup("mpu");
+	if (!mh || !mh->od) {
+		pr_err("%s: no MPU hwmod device.\n", __func__);
+		return 0;
+	}
+
+	dh = omap_hwmod_lookup("iva");
+	if (!dh || !dh->od) {
+		pr_err("%s: no DSP hwmod device.\n", __func__);
+		return 0;
+	}
+
+	mdev = &mh->od->pdev.dev;
+	ddev = &dh->od->pdev.dev;
+
+	/* add MPU and IVA clock frequencies */
+	for (opp_freq = opp_freq_add_table; opp_freq->mpu; opp_freq++) {
+		/* check enable/disable status of MPU frequecy setting */
+		mopp = opp_find_freq_exact(mdev, opp_freq->mpu, false);
+		if (IS_ERR(mopp))
+			mopp = opp_find_freq_exact(mdev, opp_freq->mpu, true);
+		if (IS_ERR(mopp)) {
+			pr_err("%s: MPU does not support %lu MHz\n", __func__, opp_freq->mpu / 1000000);
+			continue;
+		}
+
+		/* check enable/disable status of IVA frequency setting */
+		dopp = opp_find_freq_exact(ddev, opp_freq->iva, false);
+		if (IS_ERR(dopp))
+			dopp = opp_find_freq_exact(ddev, opp_freq->iva, true);
+		if (IS_ERR(dopp)) {
+			pr_err("%s: DSP does not support %lu MHz\n", __func__, opp_freq->iva / 1000000);
+			continue;
+		}
+
+		/* try to enable MPU frequency setting */
+		if (opp_enable(mopp)) {
+			pr_err("%s: OPP cannot enable MPU:%lu MHz\n", __func__, opp_freq->mpu / 1000000);
+			continue;
+		}
+
+		/* try to enable IVA frequency setting */
+		if (opp_enable(dopp)) {
+			pr_err("%s: OPP cannot enable DSP:%lu MHz\n", __func__, opp_freq->iva / 1000000);
+			opp_disable(mopp);
+			continue;
+		}
+
+		/* verify that MPU and IVA frequency settings are available */
+		mopp = opp_find_freq_exact(mdev, opp_freq->mpu, true);
+		dopp = opp_find_freq_exact(ddev, opp_freq->iva, true);
+		if (!mopp || !dopp) {
+			pr_err("%s: OPP requested MPU: %lu MHz and DSP: %lu MHz not found\n",
+				__func__, opp_freq->mpu / 1000000, opp_freq->iva / 1000000);
+			continue;
+		}
+
+		dev_info(mdev, "OPP enabled %lu MHz\n", opp_freq->mpu / 1000000);
+		dev_info(ddev, "OPP enabled %lu MHz\n", opp_freq->iva / 1000000);
+	}
+
+	return 0;
+}
+
 #ifdef CONFIG_OMAP_MUX
   #error "EVT1A port relies on the bootloader for MUX configuration."
 #endif
+device_initcall(encore_opp_init);
 
 MACHINE_START(OMAP3621_EVT1A, "encore")
 	.phys_io        = L4_34XX_PHYS,
