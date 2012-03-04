@@ -210,7 +210,6 @@ static int boxer_panel_suspend(struct omap_dss_device *dssdev)
 
 static int boxer_panel_resume(struct omap_dss_device *dssdev)
 {
-	dssdev->state = OMAP_DSS_DISPLAY_ACTIVE;
 	return boxer_panel_enable(dssdev);
 }
 

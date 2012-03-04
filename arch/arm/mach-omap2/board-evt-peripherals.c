@@ -41,6 +41,7 @@
 #include "mux.h"
 #include "hsmmc.h"
 #include "twl4030.h"
+#include "smartreflex-class1p5.h"
 
 #include <linux/cyttsp.h>
 #include <linux/ft5x06.h>
@@ -264,7 +265,7 @@ static struct twl4030_keypad_data evt_kp_twl4030_data = {
 	.keymap_data	= &board_map_data,
 	.rows		= 8,
 	.cols		= 8,
-	.rep		= 1,
+//	.rep		= 1,
 };
 
 static struct gpio_keys_button evt_gpio_buttons[] = {
@@ -463,7 +464,9 @@ static struct omap2_hsmmc_info mmc[] __initdata = {
 		.gpio_cd	= -EINVAL,
 		.gpio_wp	= -EINVAL,
 		.nonremovable	= true,
+#ifdef CONFIG_PM_RUNTIME
 		.power_saving	= true,
+#endif
 	},
 	{
 		.name		= "external",
@@ -471,7 +474,9 @@ static struct omap2_hsmmc_info mmc[] __initdata = {
 		.caps		= MMC_CAP_4_BIT_DATA,
 		.gpio_cd	= -EINVAL,
 		.gpio_wp	= -EINVAL,
+#ifdef CONFIG_PM_RUNTIME
 		.power_saving	= true,
+#endif
 	},
 	{
 		.name		= "internal",
@@ -480,7 +485,9 @@ static struct omap2_hsmmc_info mmc[] __initdata = {
 		.gpio_cd	= -EINVAL,
 		.gpio_wp	= -EINVAL,
 		.nonremovable	= true,
+#ifdef CONFIG_PM_RUNTIME
 		.power_saving	= true,
+#endif
 	},
 	{}      /* Terminator */
 };
@@ -569,7 +576,7 @@ static struct twl4030_platform_data evt_twldata = {
 	.usb		= &evt_usb_data,
 	.gpio		= &evt_gpio_data,
 	.keypad		= &evt_kp_twl4030_data,
-	.power		= &evt_t2scripts_data,
+//	.power		= &evt_t2scripts_data,
 	.vmmc1		= &evt_vmmc1,
         .vmmc2		= &evt_vmmc2,
 	.vsim		= &evt_vsim,
@@ -751,73 +758,59 @@ static struct omap_musb_board_data musb_board_data = {
 	.power			= 100,
 };
 
-#if defined(CONFIG_USB_ANDROID) || defined(CONFIG_USB_ANDROID_MODULE)
-static struct usb_mass_storage_platform_data mass_storage_pdata = {
-	.vendor = "B&N     ",
-	.product = "Ebook Disk      ",
-	.release = 0x0101,
-	.nluns = 2,
-};
+static void enable_board_wakeup_source(void)
+{
+	/* T2 interrupt line (keypad) */
+	omap_mux_init_signal("sys_nirq",
+		OMAP_WAKEUP_EN | OMAP_PIN_INPUT_PULLUP);
+}
 
-static struct platform_device usb_mass_storage_device = {
-	.name = "usb_mass_storage",
-	.id = -1,
-	.dev = {
-		.platform_data = &mass_storage_pdata,
-		},
-};
-#endif
-
-static struct twl4030_ins sleep_on_seq[] = {
-
+static struct twl4030_ins sleep_on_seq[] __initdata = {
+#if 0
 	/* Turn off HFCLKOUT */
 	{MSG_SINGULAR(DEV_GRP_P1, 0x19, RES_STATE_OFF), 2},
+#endif	       	
 	/* Turn OFF VDD1 */
 	{MSG_SINGULAR(DEV_GRP_P1, 0xf, RES_STATE_OFF), 2},
 	/* Turn OFF VDD2 */
 	{MSG_SINGULAR(DEV_GRP_P1, 0x10, RES_STATE_OFF), 2},
 	/* Turn OFF VPLL1 */
 	{MSG_SINGULAR(DEV_GRP_P1, 0x7, RES_STATE_OFF), 2},
-        /* Turn OFF REGEN */
-   //     {MSG_SINGULAR(DEV_GRP_P1, 0x15, RES_STATE_OFF), 2},
+
+	{MSG_SINGULAR(DEV_GRP_P1, 0xe, RES_STATE_ACTIVE), 0xe},
+	//{MSG_SINGULAR(DEV_GRP_P1, 0x17, RES_STATE_OFF), 0xe},
+
+        //{MSG_BROADCAST(DEV_GRP_P3, RES_GRP_PP_PR, RES_TYPE_ALL, RES_TYPE2_R0, RES_STATE_SLEEP), 0x37},
+        {MSG_BROADCAST(DEV_GRP_P3, RES_GRP_ALL, RES_TYPE_ALL, RES_TYPE2_R0, RES_STATE_SLEEP), 0x37},	
 };
 
-static struct twl4030_script sleep_on_script = {
-	.script	= sleep_on_seq,
-	.size	= ARRAY_SIZE(sleep_on_seq),
-	.flags	= TWL4030_SLEEP_SCRIPT,
-};
+static struct twl4030_ins wakeup_p12_seq[] __initdata = {
 
-static struct twl4030_ins wakeup_p12_seq[] = {
-	/* Turn on HFCLKOUT */
-	{MSG_SINGULAR(DEV_GRP_P1, 0x19, RES_STATE_ACTIVE), 2},
+	//{MSG_SINGULAR(DEV_GRP_P1, 0x17, RES_STATE_ACTIVE), 0xe},
+
 	/* Turn ON VDD1 */
 	{MSG_SINGULAR(DEV_GRP_P1, 0xf, RES_STATE_ACTIVE), 2},
 	/* Turn ON VDD2 */
 	{MSG_SINGULAR(DEV_GRP_P1, 0x10, RES_STATE_ACTIVE), 2},
 	/* Turn ON VPLL1 */
 	{MSG_SINGULAR(DEV_GRP_P1, 0x7, RES_STATE_ACTIVE), 2},
-        /* Turn ON REGEN */
-        {MSG_SINGULAR(DEV_GRP_P1, 0x15, RES_STATE_ACTIVE), 2},
-};
-
-static struct twl4030_script wakeup_p12_script = {
-	.script = wakeup_p12_seq,
-	.size   = ARRAY_SIZE(wakeup_p12_seq),
-	.flags  = TWL4030_WAKEUP12_SCRIPT,
-};
-
-static struct twl4030_ins wakeup_p3_seq[] = {
+	/* Turn on HFCLKOUT */
 	{MSG_SINGULAR(DEV_GRP_P1, 0x19, RES_STATE_ACTIVE), 2},
+
+        //{MSG_BROADCAST(DEV_GRP_P3, RES_GRP_PP_PR, RES_TYPE_ALL, RES_TYPE2_R0, RES_STATE_ACTIVE), 0x37},
+        {MSG_BROADCAST(DEV_GRP_P3, RES_GRP_ALL, RES_TYPE_ALL, RES_TYPE2_R0, RES_STATE_ACTIVE), 0x37},	
 };
 
-static struct twl4030_script wakeup_p3_script = {
-	.script = wakeup_p3_seq,
-	.size   = ARRAY_SIZE(wakeup_p3_seq),
-	.flags  = TWL4030_WAKEUP3_SCRIPT,
+static struct twl4030_ins wakeup_p3_seq[] __initdata = {
+
+	{MSG_SINGULAR(DEV_GRP_P1, 0x17, RES_STATE_ACTIVE), 0xe},
+	{MSG_SINGULAR(DEV_GRP_P1, 0x19, RES_STATE_ACTIVE), 2},
+
+        //{MSG_BROADCAST(DEV_GRP_P3, RES_GRP_PP_PR, RES_TYPE_ALL, RES_TYPE2_R0, RES_STATE_ACTIVE), 0x37},
+        {MSG_BROADCAST(DEV_GRP_P3, RES_GRP_ALL, RES_TYPE_ALL, RES_TYPE2_R0, RES_STATE_ACTIVE), 0x37},	
 };
 
-static struct twl4030_ins wrst_seq[] = {
+static struct twl4030_ins wrst_seq[] __initdata = {
 /*
  * Reset twl4030.
  * Reset VDD1 regulator.
@@ -827,34 +820,55 @@ static struct twl4030_ins wrst_seq[] = {
  * Reenable twl4030.
  */
 	{MSG_SINGULAR(DEV_GRP_NULL, 0x1b, RES_STATE_OFF), 2},
-	{MSG_SINGULAR(DEV_GRP_P1, 0xf, RES_STATE_WRST), 15},
-	{MSG_SINGULAR(DEV_GRP_P1, 0x10, RES_STATE_WRST), 15},
+	{MSG_SINGULAR(DEV_GRP_P1, 0xf, RES_STATE_WRST), 0x13},
+	{MSG_SINGULAR(DEV_GRP_P1, 0x10, RES_STATE_WRST), 0x13},
 	{MSG_SINGULAR(DEV_GRP_P1, 0x7, RES_STATE_WRST), 0x60},
 	{MSG_SINGULAR(DEV_GRP_P1, 0x19, RES_STATE_ACTIVE), 2},
 	{MSG_SINGULAR(DEV_GRP_NULL, 0x1b, RES_STATE_ACTIVE), 2},
 };
 
-static struct twl4030_script wrst_script = {
+
+static struct twl4030_resconfig twl4030_rconfig[] = {
+	{.resource = RES_HFCLKOUT,.devgroup = DEV_GRP_P3,.type = -1,
+	 .type2 = -1},
+	{.resource = RES_VDD1,.devgroup = DEV_GRP_P1,.type = -1,
+	 .type2 = -1},
+	{.resource = RES_VDD2,.devgroup = DEV_GRP_P1,.type = -1,
+	 .type2 = -1},
+	{.resource = RES_CLKEN,.devgroup = DEV_GRP_P3,.type = -1,
+	 .type2 = 1},
+	{0, 0},
+};
+
+static struct twl4030_script sleep_on_script = {
+	.script	= sleep_on_seq,
+	.size	= ARRAY_SIZE(sleep_on_seq),
+	.flags	= TWL4030_SLEEP_SCRIPT,
+};
+
+static struct twl4030_script wakeup_p12_script = {
+	.script = wakeup_p12_seq,
+	.size   = ARRAY_SIZE(wakeup_p12_seq),
+	.flags  = TWL4030_WAKEUP12_SCRIPT,
+};
+
+static struct twl4030_script wakeup_p3_script = {
+	.script = wakeup_p3_seq,
+	.size   = ARRAY_SIZE(wakeup_p3_seq),
+	.flags  = TWL4030_WAKEUP3_SCRIPT,
+};
+
+static struct twl4030_script wrst_script  = {
 	.script = wrst_seq,
-	.size   = ARRAY_SIZE(wrst_seq),
-	.flags  = TWL4030_WRST_SCRIPT,
+	.size = ARRAY_SIZE(wrst_seq),
+	.flags = TWL4030_WRST_SCRIPT,
 };
 
 static struct twl4030_script *twl4030_scripts[] = {
-	&sleep_on_script,
 	&wakeup_p12_script,
+	&sleep_on_script,
 	&wakeup_p3_script,
 	&wrst_script,
-};
-
-static struct twl4030_resconfig twl4030_rconfig[] = {
-	{ .resource = RES_HFCLKOUT, .devgroup = DEV_GRP_P3, .type = -1,
-		.type2 = -1 },
-	{ .resource = RES_VDD1, .devgroup = DEV_GRP_P1, .type = -1,
-		.type2 = -1 },
-	{ .resource = RES_VDD2, .devgroup = DEV_GRP_P1, .type = -1,
-		.type2 = -1 },
-	{ 0, 0},
 };
 
 static struct twl4030_power_data boxer_t2scripts_data = {
@@ -862,6 +876,7 @@ static struct twl4030_power_data boxer_t2scripts_data = {
 	.num		= ARRAY_SIZE(twl4030_scripts),
 	.resource_config = twl4030_rconfig,
 };
+
 
 static struct omap_uart_port_info omap_serial_platform_data[] = {
 	{
@@ -910,6 +925,25 @@ static struct omap_board_mux board_mux[] __initdata = {
 #endif
 
 #ifdef CONFIG_PM
+static struct omap_volt_vc_data vc_config = {
+	/* MPU */
+	.vdd0_on	= 1200000, /* 1.2v */
+	.vdd0_onlp	= 1000000, /* 1.0v */
+	.vdd0_ret	=  975000, /* 0.975v */
+	.vdd0_off	=  600000, /* 0.6v */
+	/* CORE */
+	.vdd1_on	= 1150000, /* 1.15v */
+	.vdd1_onlp	= 1000000, /* 1.0v */
+	.vdd1_ret	=  975000, /* 0.975v */
+	.vdd1_off	=  600000, /* 0.6v */
+
+
+	.clksetup	= 0x14A,
+	.voltoffset	= 0x118,
+	.voltsetup2	= 0x32,
+	.voltsetup_time1 = 0x00B3,
+	.voltsetup_time2 = 0x00A0,
+};
 #ifdef CONFIG_TWL4030_CORE
 static struct omap_volt_pmic_info omap_pmic_mpu = { /* and iva */
 	.name = "twl",
@@ -975,16 +1009,6 @@ static inline void ramconsole_init(void)
 static inline void ramconsole_init(void) {}
 #endif /* CONFIG_ANDROID_RAM_CONSOLE */
 
-static struct usbhs_omap_platform_data usbhs_pdata __initconst = {
-	.port_mode[0] = OMAP_EHCI_PORT_MODE_PHY,
-	.port_mode[1] = OMAP_OHCI_PORT_MODE_PHY_6PIN_DATSE0,
-	.port_mode[2] = OMAP_USBHS_PORT_MODE_UNUSED,
-	.phy_reset  = false,
-	.reset_gpio_port[0]  = -EINVAL,
-	.reset_gpio_port[1]  = -EINVAL,
-	.reset_gpio_port[2]  = -EINVAL
-};
-
 void __init evt_peripherals_init(void)
 {
 	/* Use custom Encore scripts */
@@ -1000,33 +1024,30 @@ void __init evt_peripherals_init(void)
 	 * to init only UART1 and UART2, all in the name of saving some
 	 * power.
 	 */
-	omap3_mux_init(NULL, OMAP_PACKAGE_CBP);
-	omap_serial_init(omap_serial_platform_data);
+	omap3_mux_init(board_mux, OMAP_PACKAGE_CBP);
 	omap_i2c_init();
 	platform_add_devices(evt_board_devices,
 			ARRAY_SIZE(evt_board_devices));
-	evt_lcd_panel_init();
-	kxtf9_dev_init();
-	max8903_charger_init();
-	usb_uhhtll_init(&usbhs_pdata);
-#ifdef CONFIG_BATTERY_MAX17042
-        max17042_dev_init();
-#endif
+	omap_serial_init(omap_serial_platform_data);
+	usb_musb_init(&musb_board_data);
+	enable_board_wakeup_source();
+
+	sr_class1p5_init();
 
 #ifdef CONFIG_PM
 #ifdef CONFIG_TWL4030_CORE
         omap_voltage_register_pmic(&omap_pmic_core, "core");
         omap_voltage_register_pmic(&omap_pmic_mpu, "mpu");
 #endif
+	omap_voltage_init_vc(&vc_config);
 #endif
-        usb_musb_init(&musb_board_data);
-#if defined(CONFIG_USB_ANDROID) || defined(CONFIG_USB_ANDROID_MODULE)
-	/*
-	 * Strangely enough, Android gadget platform data is registered in
-	 * the MUSB driver. We can only register the mass-storage platform
-	 * data here.
-	 */
-	platform_device_register(&usb_mass_storage_device);
+	
+	evt_lcd_panel_init();
+
+	max8903_charger_init();
+	kxtf9_dev_init();
+        max17042_dev_init();
+        
 #ifdef CONFIG_TI_ST
     printk("encore: registering wl127x device.\n");
         platform_device_register(&kim_wl127x_device);
@@ -1035,6 +1056,5 @@ void __init evt_peripherals_init(void)
 #ifdef CONFIG_BT_WILINK
     printk("encore: registering btwilink device.\n");
         platform_device_register(&btwilink_device);
-#endif
 #endif
 }
