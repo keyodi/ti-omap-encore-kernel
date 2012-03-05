@@ -31,14 +31,6 @@
 #define LCD_CABC1_GPIO                  45
 #define LCD_BACKLIGHT_EN_EVT2           47
 
-#define RED_MASK        0x00FF0000
-#define GREEN_MASK      0x0000FF00
-#define BLUE_MASK       0x000000FF
-#define RED_SHIFT       16
-#define GREEN_SHIFT     8
-#define BLUE_SHIFT      0
-#define MAX_COLOR_DEPTH 255
-
 #define DEFAULT_BACKLIGHT_BRIGHTNESS    105
 
 /*---backlight--------------------------------------------------------------------*/
@@ -51,7 +43,7 @@ static void boxer_backlight_set_power(struct omap_pwm_led_platform_data *self, i
 static struct omap_pwm_led_platform_data boxer_backlight_data = {
 	.name            = "lcd-backlight",
 	.intensity_timer = 8,
-	.def_on          = 1,   // PWM high == backlight OFF, PWM low == backlight ON
+	.def_on          = 0,   // PWM high == backlight OFF, PWM low == backlight ON
 	.def_brightness  = DEFAULT_BACKLIGHT_BRIGHTNESS,
 	.set_power       = boxer_backlight_set_power,
 };
@@ -81,11 +73,24 @@ static void __init boxer_backlight_init(void)
 }
 
 /*--------------------------------------------------------------------------*/
+struct boxer_panel_data {
+	struct regulator *vlcd;
+};
+
+static struct boxer_panel_data boxer_panel;
+
+static inline struct boxer_panel_data * get_panel_data(struct omap_dss_device *dssdev)
+{
+	return dssdev->data;
+}
+
 static struct omap_dss_device evt_lcd_device = {
 	.name = "lcd",
 	.driver_name = "boxer_panel",
 	.type = OMAP_DISPLAY_TYPE_DPI,
 	.phy.dpi.data_lines = 24,
+	.channel = OMAP_DSS_CHANNEL_LCD,
+	.data = &boxer_panel,
 };
 
 static struct omap_dss_device *evt_dss_devices[] = {
@@ -96,14 +101,6 @@ static struct omap_dss_board_info evt_dss_data = {
 	.num_devices = ARRAY_SIZE(evt_dss_devices),
 	.devices = evt_dss_devices,
 	.default_device = &evt_lcd_device,
-};
-
-static struct platform_device evt_dss_device = {
-	.name          = "omapdss",
-	.id            = -1,
-	.dev            = {
-	.platform_data = &evt_dss_data,
-	},
 };
 
 /*--------------------------------------------------------------------------*/
@@ -124,7 +121,6 @@ struct spi_board_info evt_spi_board_info[] __initdata = {
 
 /*--------------------------------------------------------------------------*/
 static struct platform_device *evt_panel_devices[] __initdata = {
-	&evt_dss_device,
 	&boxer_backlight_led_device,
 };
 

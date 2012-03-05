@@ -45,7 +45,7 @@
 
 #include <linux/cyttsp.h>
 #include <linux/ft5x06.h>
-#include <linux/kxtf9.h>
+#include <linux/input/kxtf9.h>
 #include <linux/max17042.h>
 #include <linux/max8903.h>
 
@@ -57,20 +57,86 @@
 #define KXTF9_DEVICE_ID                 "kxtf9"
 #define KXTF9_I2C_SLAVE_ADDRESS         0x0F
 #define KXTF9_GPIO_FOR_PWR              34
-#define KXTF9_GPIO_FOR_IRQ              113
 
 #define CYTTSP_I2C_SLAVEADDRESS  34
 #define OMAP_CYTTSP_GPIO         99
 #define OMAP_CYTTSP_RESET_GPIO   46
-#define LCD_EN_GPIO              36
 
 #define FT5x06_I2C_SLAVEADDRESS  (0x70 >> 1)
 #define OMAP_FT5x06_GPIO         99
 #define OMAP_FT5x06_RESET_GPIO   46
 
-#define MAX17042_GPIO_FOR_IRQ   100
+static int max17042_gpio_for_irq = 0;
+static int kxtf9_gpio_for_irq = 0;
 
 extern void evt_lcd_panel_init(void);
+
+#ifdef CONFIG_BATTERY_MAX17042
+static void max17042_dev_init(void)
+{
+	printk("board-3621_evt1a.c: max17042_dev_init ...\n");
+
+	if (gpio_request(max17042_gpio_for_irq, "max17042_irq") < 0) {
+		printk(KERN_ERR "Can't get GPIO for max17042 IRQ\n");
+		return;
+	}
+
+	printk("board-3621_evt1a.c: max17042_dev_init > Init max17042 irq pin %d !\n", max17042_gpio_for_irq);
+	gpio_direction_input(max17042_gpio_for_irq);
+	printk("max17042 GPIO pin read %d\n", gpio_get_value(max17042_gpio_for_irq));
+}
+#endif
+
+static void kxtf9_dev_init(void)
+{
+	printk("board-3621_evt1a.c: kxtf9_dev_init ...\n");
+
+	if (gpio_request(kxtf9_gpio_for_irq, "kxtf9_irq") < 0)
+	{
+		printk("Can't get GPIO for kxtf9 IRQ\n");
+		return;
+	}
+
+	printk("board-3621_evt1a.c: kxtf9_dev_init > Init kxtf9 irq pin %d !\n",
+			kxtf9_gpio_for_irq);
+	gpio_direction_input(kxtf9_gpio_for_irq);
+}
+
+
+struct kxtf9_platform_data kxtf9_platform_data_here = {
+	.min_interval   = 1,
+	.poll_interval  = 1000,
+
+	.g_range        = KXTF9_G_8G,
+	.shift_adj      = SHIFT_ADJ_2G,
+
+	// Map the axes from the sensor to the device.
+
+	//. SETTINGS FOR THE EVT1A:
+	.axis_map_x     = 0,
+	.axis_map_y     = 1,
+	.axis_map_z     = 2,
+	.negate_x       = 1,
+	.negate_y       = 1,
+	.negate_z       = 0,
+	.data_odr_init          = ODR12_5F,
+	.ctrl_reg1_init         = KXTF9_G_8G | RES_12BIT | TDTE | WUFE | TPE,
+	.int_ctrl_init          = KXTF9_IEN | KXTF9_IEA | KXTF9_IEL,
+	.int_ctrl_init          = KXTF9_IEN,
+	.tilt_timer_init        = 0x03,
+	.engine_odr_init        = OTP12_5 | OWUF50 | OTDT400,
+	.wuf_timer_init         = 0x16,
+	.wuf_thresh_init        = 0x28,
+	.tdt_timer_init         = 0x78,
+	.tdt_h_thresh_init      = 0xFF,
+	.tdt_l_thresh_init      = 0x14,
+	.tdt_tap_timer_init     = 0x53,
+	.tdt_total_timer_init   = 0x24,
+	.tdt_latency_timer_init = 0x10,
+	.tdt_window_timer_init  = 0xA0,
+
+	.gpio = 0,
+};
 
 int  ft5x06_dev_init(int resource)
 {
@@ -166,56 +232,6 @@ static struct cyttsp_platform_data cyttsp_platform_data = {
 };
 
 
-static void kxtf9_dev_init(void)
-{
-	printk("board-3621_evt1a.c: kxtf9_dev_init ...\n");
-
-	if (gpio_request(KXTF9_GPIO_FOR_IRQ, "kxtf9_irq") < 0) {
-		printk(KERN_ERR "Can't get GPIO for kxtf9 IRQ\n");
-		return;
-	}
-
-	printk("board-3621_evt1a.c: kxtf9_dev_init > Init kxtf9 irq pin %d !\n", KXTF9_GPIO_FOR_IRQ);
-	gpio_direction_input(KXTF9_GPIO_FOR_IRQ);
-	gpio_set_debounce(KXTF9_GPIO_FOR_IRQ, 0);
-}
-
-
-struct kxtf9_platform_data kxtf9_platform_data_here = {
-	.min_interval   = 1,
-	.poll_interval  = 1000,
-
-	.g_range        = KXTF9_G_8G,
-	.shift_adj      = SHIFT_ADJ_2G,
-
-	// Map the axes from the sensor to the device.
-
-	//. SETTINGS FOR THE EVT1A:
-	.axis_map_x     = 0,
-	.axis_map_y     = 1,
-	.axis_map_z     = 2,
-	.negate_x       = 1,
-	.negate_y       = 1,
-	.negate_z       = 0,
-
-	.data_odr_init          = ODR12_5F,
-	.ctrl_reg1_init         = KXTF9_G_8G | RES_12BIT | TDTE | WUFE | TPE,
-	.int_ctrl_init          = KXTF9_IEN | KXTF9_IEA | KXTF9_IEL,
-	.int_ctrl_init          = KXTF9_IEN,
-	.tilt_timer_init        = 0x03,
-	.engine_odr_init        = OTP12_5 | OWUF50 | OTDT400,
-	.wuf_timer_init         = 0x16,
-	.wuf_thresh_init        = 0x28,
-	.tdt_timer_init         = 0x78,
-	.tdt_h_thresh_init      = 0xFF,
-	.tdt_l_thresh_init      = 0x14,
-	.tdt_tap_timer_init     = 0x53,
-	.tdt_total_timer_init   = 0x24,
-	.tdt_latency_timer_init = 0x10,
-	.tdt_window_timer_init  = 0xA0,
-
-	.gpio = KXTF9_GPIO_FOR_IRQ,
-};
 
 static struct regulator_consumer_supply encore_lcd_tp_supply[] = {
 	{ .supply = "vtp" },
@@ -236,9 +252,9 @@ static struct regulator_init_data encore_lcd_tp_vinit = {
 static struct fixed_voltage_config encore_lcd_touch_reg_data = {
     .supply_name = "vdd_lcdtp",
     .microvolts = 3300000,
-    .gpio = LCD_EN_GPIO,
+    .gpio = 36,
     .enable_high = 1,
-    .enabled_at_boot = 0,
+    .enabled_at_boot = 1,
     .init_data = &encore_lcd_tp_vinit,
 };
 
@@ -265,7 +281,7 @@ static struct twl4030_keypad_data evt_kp_twl4030_data = {
 	.keymap_data	= &board_map_data,
 	.rows		= 8,
 	.cols		= 8,
-//	.rep		= 1,
+	.rep		= 1,
 };
 
 static struct gpio_keys_button evt_gpio_buttons[] = {
@@ -297,8 +313,6 @@ static struct platform_device evt_keys_gpio = {
 	.platform_data	= &evt_gpio_key_info,
 	},
 };
-
-static struct twl4030_power_data evt_t2scripts_data;
 
 static struct regulator_consumer_supply evt_vmmc1_supply = {
 	.supply		= "vmmc",
@@ -395,6 +409,7 @@ static struct regulator_init_data evt_vdsi = {
 
 /*--------------------------------------------------------------------------*/
 #ifdef CONFIG_CHARGER_MAX8903
+
 static struct resource max8903_gpio_resources_evt1a[] = {
 	{	.name	= MAX8903_TOKEN_GPIO_CHG_EN,
 		.start	= MAX8903_GPIO_CHG_EN,
@@ -433,6 +448,82 @@ static struct resource max8903_gpio_resources_evt1a[] = {
 	}
 };
 
+static struct resource max8903_gpio_resources_evt1b[] = {
+	{	.name	= MAX8903_TOKEN_GPIO_CHG_EN,
+		.start	= MAX8903_GPIO_CHG_EN,
+		.end	= MAX8903_GPIO_CHG_EN,
+		.flags	= IORESOURCE_IO,
+	}, {
+		.name	= MAX8903_TOKEN_GPIO_CHG_FLT,
+		.start	= MAX8903_GPIO_CHG_FLT,
+		.end	= MAX8903_GPIO_CHG_FLT,
+		.flags	= IORESOURCE_IO,
+	}, {
+		.name	= MAX8903_TOKEN_GPIO_CHG_IUSB,
+		.start	= MAX8903_GPIO_CHG_IUSB,
+		.end	= MAX8903_GPIO_CHG_IUSB,
+		.flags	= IORESOURCE_IO,
+	}, {
+		.name	= MAX8903_TOKEN_GPIO_CHG_USUS,
+		.start	= MAX8903_GPIO_CHG_USUS_EVT1B,
+		.end	= MAX8903_GPIO_CHG_USUS_EVT1B,
+		.flags	= IORESOURCE_IO,
+	}, {
+		.name	= MAX8903_TOKEN_GPIO_CHG_ILM,
+		.start	= MAX8903_GPIO_CHG_ILM_EVT1B,
+		.end	= MAX8903_GPIO_CHG_ILM_EVT1B,
+		.flags	= IORESOURCE_IO,
+	}, {
+		.name	= MAX8903_TOKEN_GPIO_CHG_UOK,
+		.start	= MAX8903_UOK_GPIO_FOR_IRQ,
+		.end	= MAX8903_UOK_GPIO_FOR_IRQ,
+		.flags	= IORESOURCE_IO,
+	}, {
+		.name	= MAX8903_TOKEN_GPIO_CHG_DOK,
+		.start	= MAX8903_DOK_GPIO_FOR_IRQ,
+		.end	= MAX8903_DOK_GPIO_FOR_IRQ,
+		.flags	= IORESOURCE_IO,
+	}
+};
+
+static struct resource max8903_gpio_resources_dvt[] = {
+	{	.name	= MAX8903_TOKEN_GPIO_CHG_EN,
+		.start	= MAX8903_GPIO_CHG_EN,
+		.end	= MAX8903_GPIO_CHG_EN,
+		.flags	= IORESOURCE_IO,
+	}, {
+		.name	= MAX8903_TOKEN_GPIO_CHG_FLT,
+		.start	= MAX8903_GPIO_CHG_FLT,
+		.end	= MAX8903_GPIO_CHG_FLT,
+		.flags	= IORESOURCE_IO,
+	}, {
+		.name	= MAX8903_TOKEN_GPIO_CHG_IUSB,
+		.start	= MAX8903_GPIO_CHG_IUSB,
+		.end	= MAX8903_GPIO_CHG_IUSB,
+		.flags	= IORESOURCE_IO,
+	}, {
+		.name	= MAX8903_TOKEN_GPIO_CHG_USUS,
+		.start	= MAX8903_GPIO_CHG_USUS_DVT,
+		.end	= MAX8903_GPIO_CHG_USUS_DVT,
+		.flags	= IORESOURCE_IO,
+	}, {
+		.name	= MAX8903_TOKEN_GPIO_CHG_ILM,
+		.start	= MAX8903_GPIO_CHG_ILM_DVT,
+		.end	= MAX8903_GPIO_CHG_ILM_DVT,
+		.flags	= IORESOURCE_IO,
+	}, {
+		.name	= MAX8903_TOKEN_GPIO_CHG_UOK,
+		.start	= MAX8903_UOK_GPIO_FOR_IRQ,
+		.end	= MAX8903_UOK_GPIO_FOR_IRQ,
+		.flags	= IORESOURCE_IO,
+	}, {
+		.name	= MAX8903_TOKEN_GPIO_CHG_DOK,
+		.start	= MAX8903_DOK_GPIO_FOR_IRQ,
+		.end	= MAX8903_DOK_GPIO_FOR_IRQ,
+		.flags	= IORESOURCE_IO,
+	}
+};
+
 static struct platform_device max8903_charger_device = {
 	.name           = "max8903_charger",
 	.id             = -1,
@@ -440,18 +531,31 @@ static struct platform_device max8903_charger_device = {
 
 static inline void max8903_charger_init(void)
 {
-	max8903_charger_device.resource = max8903_gpio_resources_evt1a;
-	max8903_charger_device.num_resources = ARRAY_SIZE(max8903_gpio_resources_evt1a);
+	const int board_type = encore_board_type();
 
+	if (board_type >= DVT) {
+		max8903_charger_device.resource = max8903_gpio_resources_dvt;
+		max8903_charger_device.num_resources = ARRAY_SIZE(max8903_gpio_resources_dvt);
+	} else if (board_type >= EVT1B) {
+		max8903_charger_device.resource = max8903_gpio_resources_evt1b;
+		max8903_charger_device.num_resources = ARRAY_SIZE(max8903_gpio_resources_evt1b);
+	} else if (board_type == EVT1A) {
+		max8903_charger_device.resource = max8903_gpio_resources_evt1a;
+		max8903_charger_device.num_resources = ARRAY_SIZE(max8903_gpio_resources_evt1a);
+	} else {
+		pr_err("%s: Acclaim board %d not supported\n", __func__, board_type);
+		return;
+	}
 	platform_device_register(&max8903_charger_device);
 }
+
 #endif
 
 /*--------------------------------------------------------------------------*/
 
 static struct platform_device *evt_board_devices[] __initdata = {	
-	&encore_lcd_touch_regulator_device,
 	&evt_keys_gpio,
+	&encore_lcd_touch_regulator_device,
 };
 
 /* The order is reverted in this table so that internal eMMC is presented
@@ -567,204 +671,6 @@ static struct twl4030_madc_platform_data evt_madc_data = {
 	.irq_line	= 1,
 };
 
-static struct twl4030_platform_data evt_twldata = {
-	.irq_base	= TWL4030_IRQ_BASE,
-	.irq_end	= TWL4030_IRQ_END,
-
-	/* platform_data for children goes here */
-	.madc		= &evt_madc_data,
-	.usb		= &evt_usb_data,
-	.gpio		= &evt_gpio_data,
-	.keypad		= &evt_kp_twl4030_data,
-//	.power		= &evt_t2scripts_data,
-	.vmmc1		= &evt_vmmc1,
-        .vmmc2		= &evt_vmmc2,
-	.vsim		= &evt_vsim,
-        .vdac		= &evt_vdac,
-	.vpll2		= &evt_vdsi,
-};
-
-#ifdef CONFIG_BATTERY_MAX17042
-struct max17042_platform_data max17042_platform_data_here = {
-
-        .gpio = MAX17042_GPIO_FOR_IRQ,
-};
-#endif
-
-static struct i2c_board_info __initdata evt_i2c_boardinfo[] = {
-#ifdef CONFIG_BATTERY_MAX17042
-        {
-                I2C_BOARD_INFO(MAX17042_DEVICE_ID, MAX17042_I2C_SLAVE_ADDRESS),
-                .platform_data = &max17042_platform_data_here,
-                .irq = OMAP_GPIO_IRQ(MAX17042_GPIO_FOR_IRQ),
-        },
-#endif  /*CONFIG_BATTERY_MAX17042*/
-	{
-		I2C_BOARD_INFO("tps65921", 0x48),
-		.flags		= I2C_CLIENT_WAKE,
-		.irq		= INT_34XX_SYS_NIRQ,
-		.platform_data	= &evt_twldata,
-	},
-	{
-		I2C_BOARD_INFO(KXTF9_DEVICE_ID, KXTF9_I2C_SLAVE_ADDRESS),
-		.platform_data = &kxtf9_platform_data_here,
-		.irq = OMAP_GPIO_IRQ(KXTF9_GPIO_FOR_IRQ),
-	},
-
-};
-
-#ifdef CONFIG_TI_ST
-/* wl128x BT, FM, GPS connectivity chip */
-int plat_kim_suspend(struct platform_device *pdev, pm_message_t state)
-{ 
-    return 0;
-}
-
-int plat_kim_resume(struct platform_device *pdev)
-{
-    return 0;
-}
-
-struct ti_st_plat_data wilink_pdata = {
-        .nshutdown_gpio = 60,
-        .dev_name = "/dev/ttyO1",
-        .flow_cntrl = 1,
-        .baud_rate = 3000000,
-        .suspend = plat_kim_suspend,
-        .resume = plat_kim_resume,
-};
-
-static struct platform_device kim_wl127x_device = {
-        .name           = "kim",
-        .id             = -1,
-        .dev.platform_data = &wilink_pdata,
-};
-
-#endif
-
-#ifdef CONFIG_BT_WILINK
-static struct platform_device btwilink_device = {
-       .name = "btwilink",
-       .id = -1,
-};
-#endif
-
-#define AUDIO_CODEC_IRQ_GPIO             59
-#define AIC3100_NAME			"tlv320dac3100"
-#define AIC3100_I2CSLAVEADDRESS		0x18
-
-#if defined(CONFIG_SND_SOC_TLV320DAC3100) || defined(CONFIG_SND_SOC_TLV320DAC3100)
-#define AUDIO_CODEC_POWER_ENABLE_GPIO    103
-#define AUDIO_CODEC_RESET_GPIO           37
-
-static void audio_dac_3100_dev_init(void)
-{
-        printk("board-3621_evt1a.c: audio_dac_3100_dev_init ...\n");
-        if (gpio_request(AUDIO_CODEC_RESET_GPIO, "AUDIO_CODEC_RESET_GPIO") < 0) {
-                printk(KERN_ERR "can't get AUDIO_CODEC_RESET_GPIO \n");
-                return;
-        }
-
-        printk("board-3621_evt1a.c: audio_dac_3100_dev_init > set AUDIO_CODEC_RESET_GPIO to output Low!\n");
-        gpio_direction_output(AUDIO_CODEC_RESET_GPIO, 0);
-	gpio_set_value(AUDIO_CODEC_RESET_GPIO, 0);
-
-        printk("board-3621_evt1a.c: audio_dac_3100_dev_init ...\n");
-        if (gpio_request(AUDIO_CODEC_POWER_ENABLE_GPIO, "AUDIO DAC3100 POWER ENABLE") < 0) {
-                printk(KERN_ERR "can't get AUDIO_CODEC_POWER_ENABLE_GPIO \n");
-                return;
-        }
-
-        printk("board-3621_evt1a.c: audio_dac_3100_dev_init > set AUDIO_CODEC_POWER_ENABLE_GPIO to output and value high!\n");
-        gpio_direction_output(AUDIO_CODEC_POWER_ENABLE_GPIO, 0);
-	gpio_set_value(AUDIO_CODEC_POWER_ENABLE_GPIO, 1);
-
-	/* 1 msec delay needed after PLL power-up */
-        mdelay (1);
-
-        printk("board-3621_evt1a.c: audio_dac_3100_dev_init > set AUDIO_CODEC_RESET_GPIO to output and value high!\n");
-	gpio_set_value(AUDIO_CODEC_RESET_GPIO, 1);
-}
-#endif
-
-#ifdef CONFIG_BATTERY_MAX17042
-static void max17042_dev_init(void)
-{
-        printk("board-3621_evt1a.c: max17042_dev_init ...\n");
-
-        if (gpio_request(MAX17042_GPIO_FOR_IRQ, "max17042_irq") < 0) {
-                printk(KERN_ERR "Can't get GPIO for max17042 IRQ\n");
-                return;
-        }
-
-        printk("board-3621_evt1a.c: max17042_dev_init > Init max17042 irq pin %d !\n", MAX17042_GPIO_FOR_IRQ);
-        gpio_direction_input(MAX17042_GPIO_FOR_IRQ);
-        gpio_set_debounce(MAX17042_GPIO_FOR_IRQ, 0);
-        printk("max17042 GPIO pin read %d\n", gpio_get_value(MAX17042_GPIO_FOR_IRQ));
-}
-#endif
-
-static struct i2c_board_info __initdata evt_i2c_bus2_info[] = {
-	{
-		I2C_BOARD_INFO(CY_I2C_NAME, CYTTSP_I2C_SLAVEADDRESS),
-		.platform_data = &cyttsp_platform_data,
-		.irq = OMAP_GPIO_IRQ(OMAP_CYTTSP_GPIO),
-	},
-        {
-                I2C_BOARD_INFO(FT_I2C_NAME, FT5x06_I2C_SLAVEADDRESS),
-                .platform_data = &ft5x06_platform_data,
-                .irq = OMAP_GPIO_IRQ(OMAP_FT5x06_GPIO),
-        },
-	{
-		I2C_BOARD_INFO(AIC3100_NAME,  AIC3100_I2CSLAVEADDRESS),
-                .irq = OMAP_GPIO_IRQ(AUDIO_CODEC_IRQ_GPIO),
-	},
-};
-
-static int __init omap_i2c_init(void)
-{
-	/* Disable OMAP 3630 internal pull-ups for I2Ci */
-	if (cpu_is_omap3630()) {
-
-		u32 prog_io;
-
-		prog_io = omap_ctrl_readl(OMAP343X_CONTROL_PROG_IO1);
-		/* Program (bit 19)=1 to disable internal pull-up on I2C1 */
-		prog_io |= OMAP3630_PRG_I2C1_PULLUPRESX;
-		/* Program (bit 0)=1 to disable internal pull-up on I2C2 */
-		prog_io |= OMAP3630_PRG_I2C2_PULLUPRESX;
-		omap_ctrl_writel(prog_io, OMAP343X_CONTROL_PROG_IO1);
-
-		prog_io = omap_ctrl_readl(OMAP36XX_CONTROL_PROG_IO2);
-		/* Program (bit 7)=1 to disable internal pull-up on I2C3 */
-		prog_io |= OMAP3630_PRG_I2C3_PULLUPRESX;
-		omap_ctrl_writel(prog_io, OMAP36XX_CONTROL_PROG_IO2);
-
-		prog_io = omap_ctrl_readl(OMAP36XX_CONTROL_PROG_IO_WKUP1);
-		/* Program (bit 5)=1 to disable internal pull-up on I2C4(SR) */
-		prog_io |= OMAP3630_PRG_SR_PULLUPRESX;
-		omap_ctrl_writel(prog_io, OMAP36XX_CONTROL_PROG_IO_WKUP1);
-	}
-	omap_register_i2c_bus(1, 100, NULL, evt_i2c_boardinfo,
-			ARRAY_SIZE(evt_i2c_boardinfo));
-	omap_register_i2c_bus(2, 400, NULL, evt_i2c_bus2_info,
-			ARRAY_SIZE(evt_i2c_bus2_info));
-	return 0;
-}
-
-static struct omap_musb_board_data musb_board_data = {
-	.interface_type		= MUSB_INTERFACE_ULPI,
-	.mode			= MUSB_PERIPHERAL,
-	.power			= 100,
-};
-
-static void enable_board_wakeup_source(void)
-{
-	/* T2 interrupt line (keypad) */
-	omap_mux_init_signal("sys_nirq",
-		OMAP_WAKEUP_EN | OMAP_PIN_INPUT_PULLUP);
-}
-
 static struct twl4030_ins sleep_on_seq[] __initdata = {
 #if 0
 	/* Turn off HFCLKOUT */
@@ -871,12 +777,205 @@ static struct twl4030_script *twl4030_scripts[] = {
 	&wrst_script,
 };
 
-static struct twl4030_power_data boxer_t2scripts_data = {
+static struct twl4030_power_data evt_t2scripts_data = {
 	.scripts	= twl4030_scripts,
 	.num		= ARRAY_SIZE(twl4030_scripts),
 	.resource_config = twl4030_rconfig,
 };
 
+static struct twl4030_platform_data evt_twldata = {
+	.irq_base	= TWL4030_IRQ_BASE,
+	.irq_end	= TWL4030_IRQ_END,
+
+	/* platform_data for children goes here */
+	.madc		= &evt_madc_data,
+	.usb		= &evt_usb_data,
+	.gpio		= &evt_gpio_data,
+	.keypad		= &evt_kp_twl4030_data,
+	.power		= &evt_t2scripts_data,
+	.vmmc1		= &evt_vmmc1,
+        .vmmc2		= &evt_vmmc2,
+	.vsim		= &evt_vsim,
+        .vdac		= &evt_vdac,
+	.vpll2		= &evt_vdsi,
+};
+
+#ifdef CONFIG_BATTERY_MAX17042
+struct max17042_platform_data max17042_platform_data_here = {
+
+	.gpio = 0,
+
+};
+#endif
+
+static struct i2c_board_info __initdata evt_i2c_boardinfo[] = {
+	{
+		I2C_BOARD_INFO("tps65921", 0x48),
+		.flags		= I2C_CLIENT_WAKE,
+		.irq		= INT_34XX_SYS_NIRQ,
+		.platform_data	= &evt_twldata,
+	},
+	{
+		I2C_BOARD_INFO(KXTF9_DEVICE_ID, KXTF9_I2C_SLAVE_ADDRESS),
+		.platform_data = &kxtf9_platform_data_here,
+		.irq = 0,
+	},
+	{
+		I2C_BOARD_INFO(MAX17042_DEVICE_ID, MAX17042_I2C_SLAVE_ADDRESS),
+		.platform_data = &max17042_platform_data_here,
+		.irq = 0,
+	},
+
+};
+
+#ifdef CONFIG_TI_ST
+/* wl128x BT, FM, GPS connectivity chip */
+int plat_kim_suspend(struct platform_device *pdev, pm_message_t state)
+{ 
+    return 0;
+}
+
+int plat_kim_resume(struct platform_device *pdev)
+{
+    return 0;
+}
+
+struct ti_st_plat_data wilink_pdata = {
+        .nshutdown_gpio = 60,
+        .dev_name = "/dev/ttyO1",
+        .flow_cntrl = 1,
+        .baud_rate = 3000000,
+        .suspend = plat_kim_suspend,
+        .resume = plat_kim_resume,
+};
+
+static struct platform_device kim_wl127x_device = {
+        .name           = "kim",
+        .id             = -1,
+        .dev.platform_data = &wilink_pdata,
+};
+
+#endif
+
+#ifdef CONFIG_BT_WILINK
+static struct platform_device btwilink_device = {
+       .name = "btwilink",
+       .id = -1,
+};
+#endif
+
+#define AUDIO_CODEC_IRQ_GPIO             59
+#define AIC3100_NAME			"tlv320dac3100"
+#define AIC3100_I2CSLAVEADDRESS		0x18
+
+#if defined(CONFIG_SND_SOC_TLV320DAC3100) || defined(CONFIG_SND_SOC_TLV320DAC3100)
+#define AUDIO_CODEC_POWER_ENABLE_GPIO    103
+#define AUDIO_CODEC_RESET_GPIO           37
+
+static void audio_dac_3100_dev_init(void)
+{
+        printk("board-3621_evt1a.c: audio_dac_3100_dev_init ...\n");
+        if (gpio_request(AUDIO_CODEC_RESET_GPIO, "AUDIO_CODEC_RESET_GPIO") < 0) {
+                printk(KERN_ERR "can't get AUDIO_CODEC_RESET_GPIO \n");
+                return;
+        }
+
+        printk("board-3621_evt1a.c: audio_dac_3100_dev_init > set AUDIO_CODEC_RESET_GPIO to output Low!\n");
+        gpio_direction_output(AUDIO_CODEC_RESET_GPIO, 0);
+	gpio_set_value(AUDIO_CODEC_RESET_GPIO, 0);
+
+        printk("board-3621_evt1a.c: audio_dac_3100_dev_init ...\n");
+        if (gpio_request(AUDIO_CODEC_POWER_ENABLE_GPIO, "AUDIO DAC3100 POWER ENABLE") < 0) {
+                printk(KERN_ERR "can't get AUDIO_CODEC_POWER_ENABLE_GPIO \n");
+                return;
+        }
+
+        printk("board-3621_evt1a.c: audio_dac_3100_dev_init > set AUDIO_CODEC_POWER_ENABLE_GPIO to output and value high!\n");
+        gpio_direction_output(AUDIO_CODEC_POWER_ENABLE_GPIO, 0);
+	gpio_set_value(AUDIO_CODEC_POWER_ENABLE_GPIO, 1);
+
+	/* 1 msec delay needed after PLL power-up */
+        mdelay (1);
+
+        printk("board-3621_evt1a.c: audio_dac_3100_dev_init > set AUDIO_CODEC_RESET_GPIO to output and value high!\n");
+	gpio_set_value(AUDIO_CODEC_RESET_GPIO, 1);
+}
+#endif
+
+static struct i2c_board_info __initdata evt_i2c_bus2_info[] = {
+	{
+		I2C_BOARD_INFO(CY_I2C_NAME, CYTTSP_I2C_SLAVEADDRESS),
+		.platform_data = &cyttsp_platform_data,
+		.irq = OMAP_GPIO_IRQ(OMAP_CYTTSP_GPIO),
+	},
+        {
+                I2C_BOARD_INFO(FT_I2C_NAME, FT5x06_I2C_SLAVEADDRESS),
+                .platform_data = &ft5x06_platform_data,
+                .irq = OMAP_GPIO_IRQ(OMAP_FT5x06_GPIO),
+        },
+	{
+		I2C_BOARD_INFO(AIC3100_NAME,  AIC3100_I2CSLAVEADDRESS),
+                .irq = OMAP_GPIO_IRQ(AUDIO_CODEC_IRQ_GPIO),
+	},
+};
+
+void __init encore_board_init(void)
+{
+	const int board_type = encore_board_type();
+
+	if ( board_type == EVT1A ){
+		max17042_gpio_for_irq = 98;
+		kxtf9_gpio_for_irq = 99;
+	} else if ( board_type >= EVT1B ) {
+		max17042_gpio_for_irq = 65;
+		kxtf9_gpio_for_irq = 66;
+	}
+
+	max17042_platform_data_here.gpio = max17042_gpio_for_irq;
+	evt_i2c_boardinfo[2].irq = OMAP_GPIO_IRQ(max17042_gpio_for_irq);
+	kxtf9_platform_data_here.gpio = kxtf9_gpio_for_irq;
+	evt_i2c_boardinfo[1].irq = OMAP_GPIO_IRQ(kxtf9_gpio_for_irq);
+	omap_mux_init_signal("sys_pwron_reset_out", OMAP_MUX_MODE3);
+	omap_mux_init_signal("fref_clk3_req", OMAP_MUX_MODE0 | OMAP_PIN_INPUT_PULLDOWN);
+}
+
+static int __init omap_i2c_init(void)
+{
+	/* Disable OMAP 3630 internal pull-ups for I2Ci */
+	if (cpu_is_omap3630()) {
+
+		u32 prog_io;
+
+		prog_io = omap_ctrl_readl(OMAP343X_CONTROL_PROG_IO1);
+		/* Program (bit 19)=1 to disable internal pull-up on I2C1 */
+		prog_io |= OMAP3630_PRG_I2C1_PULLUPRESX;
+		/* Program (bit 0)=1 to disable internal pull-up on I2C2 */
+		prog_io |= OMAP3630_PRG_I2C2_PULLUPRESX;
+		omap_ctrl_writel(prog_io, OMAP343X_CONTROL_PROG_IO1);
+
+		prog_io = omap_ctrl_readl(OMAP36XX_CONTROL_PROG_IO2);
+		/* Program (bit 7)=1 to disable internal pull-up on I2C3 */
+		prog_io |= OMAP3630_PRG_I2C3_PULLUPRESX;
+		omap_ctrl_writel(prog_io, OMAP36XX_CONTROL_PROG_IO2);
+
+		prog_io = omap_ctrl_readl(OMAP36XX_CONTROL_PROG_IO_WKUP1);
+		/* Program (bit 5)=1 to disable internal pull-up on I2C4(SR) */
+		prog_io |= OMAP3630_PRG_SR_PULLUPRESX;
+		omap_ctrl_writel(prog_io, OMAP36XX_CONTROL_PROG_IO_WKUP1);
+	}
+	omap_register_i2c_bus(1, 100, NULL, evt_i2c_boardinfo,
+			ARRAY_SIZE(evt_i2c_boardinfo));
+	omap_register_i2c_bus(2, 400, NULL, evt_i2c_bus2_info,
+			ARRAY_SIZE(evt_i2c_bus2_info));
+	return 0;
+}
+
+static void enable_board_wakeup_source(void)
+{
+	/* T2 interrupt line (keypad) */
+	omap_mux_init_signal("sys_nirq",
+		OMAP_WAKEUP_EN | OMAP_PIN_INPUT_PULLUP);
+}
 
 static struct omap_uart_port_info omap_serial_platform_data[] = {
 	{
@@ -987,6 +1086,12 @@ static struct omap_volt_pmic_info omap_pmic_core = {
 #endif /* CONFIG_TWL4030_CORE */
 #endif /* CONFIG_PM */
 
+static struct omap_musb_board_data musb_board_data = {
+	.interface_type		= MUSB_INTERFACE_ULPI,
+	.mode			= MUSB_PERIPHERAL,
+	.power			= 100,
+};
+
 #ifdef CONFIG_ANDROID_RAM_CONSOLE
 static struct resource ram_console_resource = {
     .start  = ENCORE_RAM_CONSOLE_START,
@@ -1011,9 +1116,6 @@ static inline void ramconsole_init(void) {}
 
 void __init evt_peripherals_init(void)
 {
-	/* Use custom Encore scripts */
-	evt_t2scripts_data = boxer_t2scripts_data;
-
         ramconsole_init();
 
 #if defined(CONFIG_SND_SOC_TLV320DAC3100) || defined(CONFIG_SND_SOC_TLV320DAC3100)
@@ -1025,12 +1127,13 @@ void __init evt_peripherals_init(void)
 	 * power.
 	 */
 	omap3_mux_init(board_mux, OMAP_PACKAGE_CBP);
+	encore_board_init();
 	omap_i2c_init();
 	platform_add_devices(evt_board_devices,
 			ARRAY_SIZE(evt_board_devices));
 	omap_serial_init(omap_serial_platform_data);
-	usb_musb_init(&musb_board_data);
 	enable_board_wakeup_source();
+	usb_musb_init(&musb_board_data);
 
 	sr_class1p5_init();
 
@@ -1041,7 +1144,6 @@ void __init evt_peripherals_init(void)
 #endif
 	omap_voltage_init_vc(&vc_config);
 #endif
-	
 	evt_lcd_panel_init();
 
 	max8903_charger_init();

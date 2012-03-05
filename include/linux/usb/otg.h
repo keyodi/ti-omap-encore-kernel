@@ -102,6 +102,10 @@ struct otg_transceiver {
 	int	(*set_power)(struct otg_transceiver *otg,
 				unsigned mA);
 
+	/* set/reset USB charger in High impedence mode on VBUS */
+	int	(*set_hz_mode)(struct otg_transceiver *otg,
+				bool enabled);
+
 	/* effective for A-peripheral, ignored for B devices */
 	int	(*set_vbus)(struct otg_transceiver *otg,
 				bool enabled);
@@ -116,6 +120,8 @@ struct otg_transceiver {
 	/* start or continue HNP role switch */
 	int	(*start_hnp)(struct otg_transceiver *otg);
 
+	/* start or continue HNP role switch */
+	int	(*get_link_status)(struct otg_transceiver *otg);
 };
 
 
@@ -178,6 +184,16 @@ static inline int
 otg_start_hnp(struct otg_transceiver *otg)
 {
 	return otg->start_hnp(otg);
+}
+
+/* Context: can sleep */
+static inline int
+otg_set_hz_mode(struct otg_transceiver *otg, bool enabled)
+{
+	if (otg->set_hz_mode)
+		return otg->set_hz_mode(otg, enabled);
+
+	return -EINVAL;
 }
 
 /* Context: can sleep */
@@ -254,6 +270,16 @@ static inline void
 otg_unregister_notifier(struct otg_transceiver *otg, struct notifier_block *nb)
 {
 	blocking_notifier_chain_unregister(&otg->notifier, nb);
+}
+
+/* notifiers */
+static inline int
+otg_get_link_status(struct otg_transceiver *otg)
+{
+	if (otg->get_link_status != NULL)
+		return otg->get_link_status(otg);
+	else
+		return 0;
 }
 
 /* for OTG controller drivers (and maybe other stuff) */

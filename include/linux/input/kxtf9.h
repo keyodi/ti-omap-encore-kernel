@@ -107,3 +107,4 @@ struct kxtf9_platform_data {
 #endif /* __KERNEL__ */
 
 #endif  /* __KXTF9_H__ */
+
