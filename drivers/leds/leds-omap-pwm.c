@@ -14,7 +14,6 @@
 #include <linux/init.h>
 #include <linux/err.h>
 #include <linux/slab.h>
-#include <linux/earlysuspend.h>
 #include <linux/platform_device.h>
 #include <linux/leds.h>
 #include <linux/ctype.h>
@@ -22,12 +21,7 @@
 #include <linux/interrupt.h>
 #include <asm/delay.h>
 #include <plat/board.h>
-#include <mach/dmtimer.h>
-
-#ifdef CONFIG_HAS_EARLYSUSPEND
-static void omap_pwm_led_early_suspend(struct early_suspend *handler);
-static void omap_pwm_led_late_resume(struct early_suspend *handler);
-#endif
+#include <plat/dmtimer.h>
 
 #define NO_LED_FULL /* to avoid led flickering, never set brightness to FULL */
 
@@ -41,9 +35,6 @@ struct omap_pwm_led {
 	int powered;
 	unsigned int on_period, off_period;
 	enum led_brightness brightness;
-#ifdef CONFIG_HAS_EARLYSUSPEND
-	struct early_suspend  early_suspend;
-#endif
 	atomic_t cached_brightness;
 };
 
@@ -116,7 +107,7 @@ static irqreturn_t intensity_timer_match_interrupt(int irq, void *arg)
 
 	/* set new match value */
 	omap_dm_timer_set_match(timer, 1, (0xffffff00) | atomic_read(&led->cached_brightness));
-	
+
 	return IRQ_HANDLED;
 }
 
@@ -124,7 +115,7 @@ static void omap_pwm_disable_int_work(struct work_struct *work)
 {
     struct delayed_work *dw = container_of(work, struct delayed_work, work);
 	struct omap_pwm_led* led =  container_of(dw, struct omap_pwm_led, disable_int_work);
-	
+
 	/* disable match interrupt*/
 	omap_dm_timer_set_int_enable(led->intensity_timer, 0);	
 }
@@ -132,7 +123,7 @@ static void omap_pwm_disable_int_work(struct work_struct *work)
 static void omap_pwm_led_power_on(struct omap_pwm_led *led)
 {
 	int err;
-	
+
 	if (led->powered)
 		return;
 	led->powered = 1;
@@ -229,7 +220,7 @@ static void omap_pwm_led_set_pwm_cycle(struct omap_pwm_led *led, int cycle)
 
 		/* Cache the new brightness request and set it in the match interrupt handler afterwards. */
 		atomic_set(&led->cached_brightness, cycle);
-	
+
 		omap_dm_timer_set_pwm(led->intensity_timer, 
 					  def_on ? 0 : 1, 1,
 				      OMAP_TIMER_TRIGGER_OVERFLOW_AND_COMPARE);
@@ -240,13 +231,13 @@ static void omap_pwm_led_set_pwm_cycle(struct omap_pwm_led *led, int cycle)
 						(0xffffff00) | cycle);
 		} else {
 			/* Don't set the new brightness here, but set it in the match interrupt handler. */
-				
+
 			/* Cancel the pending disable interrupt work */
 			cancel_delayed_work_sync(&led->disable_int_work);
-				
+
 			/* At this point timer match interrupt must have been disabled, so enable it. */
 			omap_dm_timer_set_int_enable(led->intensity_timer, OMAP_TIMER_INT_MATCH);
-				
+
 			/* Schedule to disable interrupt to avoid performance hit. 
 			   Note that we cannot disable interrupt immediately in the interrupt handler 
 			   because for some unknown reason it will cause flickering when the next brightness 
@@ -385,7 +376,7 @@ static int omap_pwm_led_probe(struct platform_device *pdev)
 
 	dev_info(&pdev->dev, "OMAP PWM LED (%s) at GP timer %d/%d\n",
 		 pdata->name, pdata->intensity_timer, pdata->blink_timer);
-	 
+
 	if (pdata->def_brightness) {
 		led->cdev.brightness = pdata->def_brightness;
 	}
@@ -431,13 +422,6 @@ static int omap_pwm_led_probe(struct platform_device *pdev)
 		omap_pwm_led_power_on(led);
 		omap_pwm_led_power_off(led);
 	}
-
-#ifdef CONFIG_HAS_EARLYSUSPEND
-	led->early_suspend.level   = EARLY_SUSPEND_LEVEL_BLANK_SCREEN - 1;
-	led->early_suspend.suspend = omap_pwm_led_early_suspend;
-	led->early_suspend.resume  = omap_pwm_led_late_resume;
-	register_early_suspend(&led->early_suspend);
-#endif
 	return 0;
 
 error_blink3:
@@ -458,9 +442,6 @@ static int omap_pwm_led_remove(struct platform_device *pdev)
 {
 	struct omap_pwm_led *led = pdev_to_omap_pwm_led(pdev);
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
-	unregister_early_suspend(&led->early_suspend);
-#endif
 
 	device_remove_file(led->cdev.dev,
 				 &dev_attr_on_period);
@@ -477,31 +458,8 @@ static int omap_pwm_led_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
-static void omap_pwm_led_early_suspend(struct early_suspend *handler)
-{
-	struct omap_pwm_led *led;
 
-	led = container_of(handler, struct omap_pwm_led, early_suspend);
-
-	flush_work(&led->work);
-	/* Make sure the led is switched OFF NOW in this current thread!!! */
-	omap_pwm_led_power_off(led);
-
-	led_classdev_suspend(&led->cdev);
-}
-
-static void omap_pwm_led_late_resume(struct early_suspend *handler)
-{
-	struct omap_pwm_led *led;
-
-	led = container_of(handler, struct omap_pwm_led, early_suspend);
-
-	led_classdev_resume(&led->cdev);
-}
-#endif
-
-#if defined(CONFIG_PM) && !defined(CONFIG_HAS_EARLYSUSPEND)
+#ifdef CONFIG_PM
 static int omap_pwm_led_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	struct omap_pwm_led *led = pdev_to_omap_pwm_led(pdev);
@@ -525,10 +483,8 @@ static int omap_pwm_led_resume(struct platform_device *pdev)
 static struct platform_driver omap_pwm_led_driver = {
 	.probe		= omap_pwm_led_probe,
 	.remove		= omap_pwm_led_remove,
-#ifndef CONFIG_HAS_EARLYSUSPEND
 	.suspend	= omap_pwm_led_suspend,
 	.resume		= omap_pwm_led_resume,
-#endif
 	.driver		= {
 		.name		= "omap_pwm_led",
 		.owner		= THIS_MODULE,

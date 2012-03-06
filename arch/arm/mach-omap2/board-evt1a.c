@@ -85,7 +85,7 @@ static void __init omap_evt_init(void)
 static void __init omap_evt_map_io(void)
 {
         omap2_ramconsole_reserve_sdram();
-	omap2_set_globals_36xx();
+	omap2_set_globals_343x();
 	omap34xx_map_common_io();
 }
 
