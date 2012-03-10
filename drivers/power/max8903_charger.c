@@ -58,6 +58,8 @@
 #define ENABLED   0
 #define DISABLED  1
 
+#define STS_HW_CONDITIONS		0x0F
+
 extern void max17042_update_callback(u8 charger_in);
 
 DEFINE_MUTEX(charger_mutex);
@@ -381,9 +383,42 @@ static struct attribute_group max8903_attr_group = {
 	.attrs  = max8903_control_sysfs_entries,
 };
 
+static inline int twl4030_readb(u8 module, u8 address)
+{
+	u8 data = 0;
+	int ret = 0;
+
+	ret = twl_i2c_read_u8(module, &data, address);
+	if (ret >= 0)
+		ret = data;
+
+	return ret;
+}
+
+/*FIX to detect charger at boot*/
+static int twl4030_usb_linkstat(void)
+{
+	int	status;
+	int	linkstat = USB_EVENT_NONE;
+
+	status = twl4030_readb(TWL4030_MODULE_PM_MASTER,
+			STS_HW_CONDITIONS);
+	if (status < 0)
+		printk("USB link status err %d\n", status);
+	else if (status & (BIT(7) | BIT(2))) {
+		if (status & BIT(2))
+			linkstat = USB_EVENT_ID;
+		else
+			linkstat = USB_EVENT_VBUS;
+	} else
+		linkstat = USB_EVENT_NONE;
+
+	return linkstat;
+}
+
 static void max8903_usb_charger_atboot(struct max8903_charger *di)
 {
-	di->detected_event = otg_get_link_status(di->otg);
+	di->detected_event = twl4030_usb_linkstat();  //otg_get_link_status(di->otg);
 	printk("MAX8903: Charger detected at boot = %ld\n", di->detected_event);
 		switch (di->detected_event) {
 		case USB_EVENT_VBUS:
