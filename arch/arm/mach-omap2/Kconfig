@@ -76,6 +76,13 @@ config MACH_ENCORE
         select OMAP_PACKAGE_CBP
 	select WLAN_POWER_EVT1
 
+config WLAN_POWER_EVT1
+        bool "WLAN power support"
+        depends on MACH_ENCORE && TIWLAN_SDIO
+        default "y"
+        help
+          Has to be set for B&N Encore board.
+
 config MACH_OVERO
 	bool "Gumstix Overo board"
 	depends on ARCH_OMAP3
